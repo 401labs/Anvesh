@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  lead-scraper:
+  anvesh:
     build: .
     depends_on:
       - db

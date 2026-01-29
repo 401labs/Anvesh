@@ -1,7 +1,7 @@
 [project]
-name = "lead-scraper"
+name = "anvesh"
 version = "0.1.0"
-description = "Add your description here"
+description = "A powerful 'Blue Ocean' lead scraper to find high-value businesses with zero online presence."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
