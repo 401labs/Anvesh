@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.egg
+*.egg-info/
+.Python/
+build/
+dist/
+.env
+.venv/
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.hypothesis/
+.pytest_cache/
+htmlcov/
+.ipynb_checkpoints
+.mypy_cache/
+.dmypy.json
+.vscode/
+.idea/
+*.swp
+*.bak
+*.swo
+*~
+.DS_Store
+.flaskenv
+.poetry/
+.python-version
+
+# Local environment files
+.env.local
+
+# Exported data
+*.csv
+data/

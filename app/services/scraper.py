@@ -14,7 +14,7 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
     results = []
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         
         # 🟢 FIX 1: Set Timezone to reduce "Near Me" bias (using Toronto/NY as generic NA)
         context = browser.new_context(
@@ -160,26 +160,37 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                                     phone = line
                                     break
                         # --- 5. NEW: Reviews & Rating ---
-                        rating = "N/A"
+                        rating = None
                         reviews = 0
                         
-                        # Google often puts this in a single div with aria-label="4.7 stars, 15 reviews"
-                        # We look for the element containing the stars
-                        stars_el = page.query_selector('div[role="img"][aria-label*="stars"]')
-                        
-                        if stars_el:
-                            aria_text = stars_el.get_attribute("aria-label") # "4.7 stars, 15 reviews"
+                        # Look for rating element, can be a div or a span
+                        rating_el = page.query_selector('[aria-label*="stars"]')
+                        if rating_el:
+                            aria_text = rating_el.get_attribute("aria-label") # e.g., "4.4 stars "
                             if aria_text:
-                                parts = aria_text.split(',')
-                                if len(parts) >= 2:
-                                    rating = parts[0].replace("stars", "").strip()
-                                    # Extract number from "15 reviews"
-                                    reviews_text = parts[1].replace("reviews", "").strip()
-                                    # Handle "1.2K" or simple numbers
-                                    try:
-                                        reviews = int(reviews_text.replace("(", "").replace(")", "").replace(",", ""))
-                                    except:
-                                        reviews = reviews_text # Keep as string if parsing fails
+                                try:
+                                    # Extract the first part, which should be the number
+                                    rating_str = aria_text.split(" ")[0]
+                                    rating = float(rating_str)
+                                except (ValueError, IndexError):
+                                    pass # Keep rating as None
+
+                        # Look for reviews element separately
+                        reviews_el = page.query_selector('[aria-label*="reviews"]')
+                        if reviews_el:
+                             aria_text = reviews_el.get_attribute("aria-label") # e.g., "17 reviews"
+                             if aria_text:
+                                try:
+                                    reviews_str = aria_text.split(" ")[0].replace(",", "")
+                                    # Handle suffixes like K for thousands, M for millions
+                                    if 'K' in reviews_str.upper():
+                                        reviews = int(float(reviews_str.upper().replace('K', '')) * 1000)
+                                    elif 'M' in reviews_str.upper():
+                                        reviews = int(float(reviews_str.upper().replace('M', '')) * 1000000)
+                                    else:
+                                        reviews = int(reviews_str)
+                                except (ValueError, IndexError):
+                                    pass # Keep reviews as 0
                         
                         # --- 6. NEW: "Claim this Business" Status ---
                         # If this link exists, the profile is UNCLAIMED (High Value Lead)
