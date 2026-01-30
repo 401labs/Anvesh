@@ -43,3 +43,10 @@ resources:
   features and API.
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 - [Fumadocs](https://fumadocs.dev) - learn about Fumadocs
+
+## 🚀 CI/CD
+
+This project uses GitHub Actions for automated testing and deployment.
+- **Build & Lint**: Runs on every push to `main` and PRs affecting `docs-site/**`.
+- **Workflow**: `.github/workflows/docs-build.yml`
+
