@@ -1,28 +1,45 @@
-# Anvesh Documentation Site
+# docs-site
 
-This is the documentation portal for Anvesh, built with **Next.js 15**, **Fumadocs**, and **Tailwind CSS**.
+This is a Next.js application generated with
+[Create Fumadocs](https://github.com/fuma-nama/fumadocs).
 
-## 🚀 Getting Started
+Run development server:
 
-1.  **Install Dependencies**
-    ```bash
-    bun install
-    ```
+```bash
+npm run dev
+# or
+pnpm dev
+# or
+yarn dev
+```
 
-2.  **Run Development Server**
-    ```bash
-    bun run dev
-    ```
-    Open [http://localhost:3000](http://localhost:3000)
+Open http://localhost:3000 with your browser to see the result.
 
-## 📝 Editing Docs
+## Explore
 
-Documentation content is located in `content/docs`.
-- Files must end with `.mdx`
-- Supports standard Markdown and MDX components
+In the project, you can see:
 
-## 🛠️ Stack
-- [Next.js 15](https://nextjs.org) - App Framework
-- [Fumadocs](https://fumadocs.vercel.app) - Documentation Framework
-- [Tailwind CSS](https://tailwindcss.com) - Styling
-- [Bun](https://bun.sh) - Runtime & Package Manager
+- `lib/source.ts`: Code for content source adapter, [`loader()`](https://fumadocs.dev/docs/headless/source-api) provides the interface to access your content.
+- `lib/layout.shared.tsx`: Shared options for layouts, optional but preferred to keep.
+
+| Route                     | Description                                            |
+| ------------------------- | ------------------------------------------------------ |
+| `app/(home)`              | The route group for your landing page and other pages. |
+| `app/docs`                | The documentation layout and pages.                    |
+| `app/api/search/route.ts` | The Route Handler for search.                          |
+
+### Fumadocs MDX
+
+A `source.config.ts` config file has been included, you can customise different options like frontmatter schema.
+
+Read the [Introduction](https://fumadocs.dev/docs/mdx) for further details.
+
+## Learn More
+
+To learn more about Next.js and Fumadocs, take a look at the following
+resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js
+  features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [Fumadocs](https://fumadocs.dev) - learn about Fumadocs
