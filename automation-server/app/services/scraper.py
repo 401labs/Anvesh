@@ -14,7 +14,7 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
     results = []
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         
         # 🟢 FIX 1: Set Timezone to reduce "Near Me" bias (using Toronto/NY as generic NA)
         context = browser.new_context(

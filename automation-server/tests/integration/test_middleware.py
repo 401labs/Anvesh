@@ -9,7 +9,7 @@ class TestAPIKeyMiddleware:
     
     def test_missing_api_key_header(self, client):
         """Request without X-API-Key should return 422 (missing required header)."""
-        response = client.get("/status")
+        response = client.get("/automation/tasks")
         
         # FastAPI returns 422 for missing required headers
         assert response.status_code == 422
@@ -17,7 +17,7 @@ class TestAPIKeyMiddleware:
     def test_invalid_api_key(self, client):
         """Request with invalid API key should return 401."""
         response = client.get(
-            "/status",
+            "/automation/tasks",
             headers={"X-API-Key": "anv_invalid_key"}
         )
         
@@ -26,7 +26,7 @@ class TestAPIKeyMiddleware:
     
     def test_valid_api_key_passes(self, client, user_headers):
         """Request with valid API key should succeed."""
-        response = client.get("/status", headers=user_headers)
+        response = client.get("/automation/tasks", headers=user_headers)
         
         assert response.status_code == 200
 

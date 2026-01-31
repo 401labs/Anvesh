@@ -1,0 +1,37 @@
+---
+title: Automation
+description: Start, stop, and manage lead scraping automation tasks
+---
+
+# Automation API
+
+Control the lead scraping automation engine to find high-value businesses with zero online presence.
+
+## Quick Start
+
+```bash
+# Start a scraping task
+curl -X POST http://localhost:8000/automation/start \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"industry": "restaurants", "locations": ["Mumbai", "Delhi"], "limit_per_location": 50}'
+
+# Check task status
+curl http://localhost:8000/automation/tasks/{task_id} \
+  -H "X-API-Key: your-api-key"
+
+# Stop all running tasks
+curl -X POST http://localhost:8000/automation/stop \
+  -H "X-API-Key: your-api-key"
+```
+
+## Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/automation/start` | Start a new scraping task |
+| POST | `/automation/stop` | Stop all running tasks |
+| POST | `/automation/tasks/{task_id}/stop` | Stop a specific task |
+| GET | `/automation/tasks` | List all tasks |
+| GET | `/automation/tasks/{task_id}` | Get task details |
+| GET | `/automation/export` | Export leads to CSV |

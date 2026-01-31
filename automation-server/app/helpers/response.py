@@ -1,18 +1,75 @@
 """
-Standardized API Response Helpers.
+Standardized API Response Models and Helpers.
 
-Provides uniform response structure across all API endpoints:
-{
-    "success": true/false,
-    "message": "Human readable message",
-    "data": {...} or null,
-    "error": false/true
-}
+Provides uniform response structure across all API endpoints.
 """
 from fastapi import status
 from fastapi.responses import JSONResponse
-from typing import Any, Optional
+from pydantic import BaseModel, Field
+from typing import Any, Optional, Generic, TypeVar
 from datetime import datetime, date
+
+# Generic type for response data
+T = TypeVar('T')
+
+
+class APIResponse(BaseModel):
+    """
+    Standard API response model for OpenAPI documentation.
+    
+    All endpoints return this structure.
+    """
+    success: bool = Field(description="Whether the request was successful")
+    message: str = Field(description="Human-readable message")
+    data: Optional[Any] = Field(default=None, description="Response data")
+    error: bool = Field(description="Whether an error occurred")
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "success": True,
+                    "message": "Operation completed successfully",
+                    "data": {"id": 1, "name": "Example"},
+                    "error": False
+                }
+            ]
+        }
+    }
+
+
+class ErrorResponse(BaseModel):
+    """
+    Standard error response model for OpenAPI documentation.
+    """
+    success: bool = Field(default=False, description="Always false for errors")
+    message: str = Field(description="Error message")
+    data: Optional[Any] = Field(default=None, description="Additional error details")
+    error: bool = Field(default=True, description="Always true for errors")
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "success": False,
+                    "message": "Validation error",
+                    "data": {"errors": ["field -> error message"]},
+                    "error": True
+                }
+            ]
+        }
+    }
+
+
+# Standard response definitions for OpenAPI
+STANDARD_RESPONSES = {
+    400: {"model": ErrorResponse, "description": "Bad Request"},
+    401: {"model": ErrorResponse, "description": "Unauthorized - Invalid API key"},
+    403: {"model": ErrorResponse, "description": "Forbidden - Admin access required"},
+    404: {"model": ErrorResponse, "description": "Not Found"},
+    422: {"model": ErrorResponse, "description": "Validation Error"},
+    500: {"model": ErrorResponse, "description": "Internal Server Error"},
+}
 
 
 def _serialize_value(val: Any) -> Any:

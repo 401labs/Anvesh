@@ -1,0 +1,35 @@
+---
+title: API Reference
+description: Complete API documentation for the Anvesh Automation Server
+---
+
+# API Reference
+
+Welcome to the Anvesh API documentation. This section contains automatically generated documentation from the OpenAPI specification.
+
+## Available APIs
+
+<Cards>
+  <Card title="Automation" href="/docs/api/automation">
+    Start, stop, and manage lead scraping automation tasks.
+  </Card>
+  <Card title="API Keys" href="/docs/api/api-keys">
+    Manage your API keys for authentication.
+  </Card>
+</Cards>
+
+## Authentication
+
+All API endpoints require authentication via API key. Include your API key in the request headers:
+
+```bash
+curl -H "X-API-Key: your-api-key" http://localhost:8000/automation
+```
+
+## Base URL
+
+```
+http://localhost:8000
+```
+
+For production deployments, replace with your actual API server URL.

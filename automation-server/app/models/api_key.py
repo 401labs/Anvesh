@@ -1,16 +1,30 @@
 """
 API Key authentication models.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
 
 class APIKeyCreate(BaseModel):
     """Request model for creating a new API key."""
-    name: str
-    tier: str = "free"
-    expires_in_days: Optional[int] = None
+    name: str = Field(
+        ...,
+        description="A descriptive name for this API key",
+        examples=["Production Key", "Development Key", "Client XYZ"]
+    )
+    tier: str = Field(
+        default="free",
+        description="Pricing tier for rate limiting. Options: free, pro, enterprise",
+        examples=["free", "pro", "enterprise"]
+    )
+    expires_in_days: Optional[int] = Field(
+        default=None,
+        description="Number of days until the key expires. Leave empty for no expiration.",
+        ge=1,
+        examples=[30, 90, 365]
+    )
+
 
 
 class APIKeyResponse(BaseModel):

@@ -1,0 +1,46 @@
+---
+title: API Keys
+description: Manage API keys for authenticating with the Anvesh API
+---
+
+# API Keys
+
+Manage API keys for authenticating with the Anvesh API.
+
+## Quick Start
+
+```bash
+# Get your API key info
+curl http://localhost:8000/me \
+  -H "X-API-Key: your-api-key"
+
+# Check your usage stats
+curl http://localhost:8000/me/usage \
+  -H "X-API-Key: your-api-key"
+```
+
+## Admin Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/admin/keys` | Create a new API key |
+| GET | `/admin/keys` | List all API keys |
+| GET | `/admin/keys/{key_id}` | Get key details |
+| DELETE | `/admin/keys/{key_id}` | Delete a key |
+| POST | `/admin/keys/{key_id}/revoke` | Revoke a key |
+| GET | `/admin/keys/{key_id}/usage` | Get key usage stats |
+
+## User Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/me` | Get your API key info |
+| GET | `/me/usage` | Get your usage statistics |
+
+## Tiers
+
+| Tier | Monthly Limit |
+|------|---------------|
+| `free` | 1,000 leads |
+| `pro` | 10,000 leads |
+| `enterprise` | Unlimited |

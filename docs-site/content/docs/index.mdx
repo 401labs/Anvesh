@@ -1,13 +1,48 @@
 ---
-title: Hello World
-description: Your first document
+title: Getting Started
+description: Learn how to use Anvesh for lead generation
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
-## What is Next?
+# Welcome to Anvesh
+
+Anvesh is a **lead generation engine** that hunts for high-value businesses with zero online presence. It automates lead scraping from Google Maps and exports data to CSV.
+
+## Quick Start
+
+1. **Start the API server**
+   ```bash
+   cd automation-server
+   uv run uvicorn app.main:app --reload
+   ```
+
+2. **Get an API key** (admin only)
+   ```bash
+   curl -X POST http://localhost:8000/admin/keys \
+     -H "X-Admin-Secret: your-secret" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "My Key", "tier": "free"}'
+   ```
+
+3. **Start scraping**
+   ```bash
+   curl -X POST http://localhost:8000/automation/start \
+     -H "X-API-Key: anv_..." \
+     -H "Content-Type: application/json" \
+     -d '{"industry": "restaurants", "locations": ["Mumbai"], "limit_per_location": 50}'
+   ```
+
+## Explore
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="API Reference" href="/docs/api">
+    Full API documentation with examples.
+  </Card>
+  <Card title="Automation" href="/docs/api/automation">
+    Start, stop, and manage scraping tasks.
+  </Card>
+  <Card title="API Keys" href="/docs/api/api-keys">
+    Manage authentication keys.
+  </Card>
 </Cards>

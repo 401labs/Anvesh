@@ -1,0 +1,35 @@
+---
+title: Admin - Automation
+description: Admin-only endpoints for system-wide automation monitoring and control
+---
+
+# Admin Automation API
+
+System-wide automation management for administrators.
+
+> [!IMPORTANT]
+> All endpoints require `X-Admin-Secret` header for authentication.
+
+## Quick Start
+
+```bash
+# View all system tasks
+curl http://localhost:8000/admin/automation/tasks \
+  -H "X-Admin-Secret: your-admin-secret"
+
+# Get system statistics
+curl http://localhost:8000/admin/automation/stats \
+  -H "X-Admin-Secret: your-admin-secret"
+
+# Emergency stop all tasks
+curl -X POST http://localhost:8000/admin/automation/stop-all \
+  -H "X-Admin-Secret: your-admin-secret"
+```
+
+## Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/admin/automation/tasks` | View all tasks system-wide |
+| POST | `/admin/automation/stop-all` | Force stop all running tasks |
+| GET | `/admin/automation/stats` | Get system-wide statistics |
