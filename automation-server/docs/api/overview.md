@@ -2,9 +2,9 @@
 
 ## Authentication
 
-All API endpoints require authentication via API keys passed in the `X-API-Key` header.
+Most endpoints require an API key via the `X-API-Key` header. A valid `X-Admin-Secret` header may be sent instead of `X-API-Key` on any of these endpoints — it bypasses per-key quota entirely.
 
-Admin endpoints additionally require `X-Admin-Secret` header.
+Admin-only endpoints (`/admin/*`) require `X-Admin-Secret`.
 
 ## Response Format
 

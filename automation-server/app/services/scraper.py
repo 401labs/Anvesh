@@ -1,6 +1,83 @@
 from playwright.sync_api import sync_playwright
 import time
+import re
+from typing import Optional
+from urllib.parse import urljoin
 from app.db import insert_lead
+
+EMAIL_PATTERN = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+
+# File extensions / domains that regularly false-positive as "emails" when scraping arbitrary pages
+_EMAIL_NOISE = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', 'example.com', 'sentry.io', 'wixpress.com')
+
+
+def _looks_like_real_email(email: str) -> bool:
+    lowered = email.lower()
+    return not any(noise in lowered for noise in _EMAIL_NOISE)
+
+
+def _find_email_on_page(page) -> Optional[str]:
+    """Look for a mailto: link first (most reliable), then fall back to scanning visible text."""
+    mailto = page.query_selector('a[href^="mailto:"]')
+    if mailto:
+        href = mailto.get_attribute("href") or ""
+        email = href.replace("mailto:", "").split("?")[0].strip()
+        if email and _looks_like_real_email(email):
+            return email
+
+    try:
+        body_text = page.inner_text("body")
+    except Exception:
+        return None
+
+    match = EMAIL_PATTERN.search(body_text)
+    if match and _looks_like_real_email(match.group(0)):
+        return match.group(0)
+
+    return None
+
+
+def extract_email_from_website(context, url: str, timeout_ms: int = 8000) -> Optional[str]:
+    """
+    Best-effort visit to a business's own website to find a contact email.
+    Google Maps itself never exposes an email, so this is a secondary hop
+    against a site we don't control — always wrapped so it can never crash
+    the main scrape loop, and always closes the page it opens.
+    """
+    if not url:
+        return None
+
+    page = None
+    try:
+        page = context.new_page()
+        page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+
+        email = _find_email_on_page(page)
+        if email:
+            return email
+
+        # Many sites only put the email on a dedicated Contact page
+        contact_link = page.query_selector('a[href*="contact" i]')
+        if contact_link:
+            href = contact_link.get_attribute("href")
+            if href:
+                contact_url = urljoin(url, href)
+                page.goto(contact_url, timeout=timeout_ms, wait_until="domcontentloaded")
+                email = _find_email_on_page(page)
+                if email:
+                    return email
+
+    except Exception as e:
+        print(f"      ⚠️ Email lookup failed for {url}: {e}")
+    finally:
+        if page:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+    return None
+
 
 def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signal=None):
     """
@@ -365,6 +442,16 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                         if cat_btn:
                             category = cat_btn.inner_text()
 
+                        # --- 8. NEW: Contact Email ---
+                        # Google Maps never shows an email itself — best-effort visit to
+                        # the business's own website to look for one.
+                        email = None
+                        if has_website and website_url:
+                            print(f"      📧 Looking up email at {website_url}...")
+                            email = extract_email_from_website(context, website_url)
+                            if email:
+                                print(f"      ✅ Found email: {email}")
+
                         # -----------------------------------
 
                         print(f"      ✅ Found: {name} | ⭐ {rating} ({reviews}) | Claimed: {is_claimed}")
@@ -380,7 +467,8 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                             "is_claimed": is_claimed,  # NEW
                             "has_website": has_website,
                             "website_url": website_url,
-                            "phone": phone
+                            "phone": phone,
+                            "email": email              # NEW
                         })
 
                         lead_data = {
@@ -391,6 +479,7 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                             "has_website": has_website,
                             "website_url": website_url,
                             "phone": phone,
+                            "email": email,            # NEW
                             "rating": rating,          # NEW
                             "review_count": reviews,   # NEW
                             "is_claimed": is_claimed,  # NEW

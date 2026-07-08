@@ -5,14 +5,16 @@ This module provides endpoints for managing API keys:
 - Admin endpoints: Create, list, revoke, and delete API keys
 - User endpoints: View your own key info and usage statistics
 """
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
 from app.middleware.auth import get_api_key, require_admin
-from app.models.api_key import APIKeyCreate, APIKeyData
+from app.models.api_key import APIKeyCreate, APIKeyUpdate, APIKeyData
 from app.db import (
     create_api_key,
     get_api_key_by_id,
     list_api_keys,
+    count_api_keys,
+    update_api_key,
     revoke_api_key,
     delete_api_key,
     get_usage_stats
@@ -35,8 +37,8 @@ Create a new API key for authenticating with the Anvesh API.
 Store it securely - you won't be able to retrieve it again!
 
 **Tiers:**
-- `free` - 1,000 leads/month
-- `pro` - 10,000 leads/month  
+- `free` - 100 leads/month
+- `pro` - 5,000 leads/month
 - `enterprise` - Unlimited
     """,
     response_description="The newly created API key (store this securely!)",
@@ -59,20 +61,26 @@ async def create_key(
 
 @router.get(
     "/admin/keys",
-    summary="List all API keys",
+    summary="List API keys (paginated)",
     description="""
-Retrieve a list of all API keys in the system.
+Retrieve a page of API keys in the system, most recently created first.
 
 Keys are returned with masked values (showing only the prefix) for security.
+Use `limit` and `offset` to paginate through results.
     """,
-    response_description="List of all API keys with masked values",
+    response_description="A page of API keys with masked values, plus the total count",
     response_model=APIResponse,
     responses=STANDARD_RESPONSES,
 )
-async def list_keys(_: bool = Depends(require_admin)):
-    """List all API keys (masked). Admin only."""
-    keys = list_api_keys()
-    return api_success("API keys retrieved", keys)
+async def list_keys(
+    limit: int = Query(20, ge=1, le=200, description="Max number of keys to return"),
+    offset: int = Query(0, ge=0, description="Number of keys to skip"),
+    _: bool = Depends(require_admin)
+):
+    """List API keys (masked), paginated. Admin only."""
+    keys = list_api_keys(limit=limit, offset=offset)
+    total = count_api_keys()
+    return api_success("API keys retrieved", {"keys": keys, "total": total, "limit": limit, "offset": offset})
 
 
 @router.get(
@@ -92,6 +100,37 @@ async def get_key(
     if not key:
         return api_error("API key not found", status_code=404)
     return api_success("API key retrieved", key)
+
+
+@router.patch(
+    "/admin/keys/{key_id}",
+    summary="Update an API key",
+    description="""
+Update an existing API key's name, tier, or expiration.
+
+Only the fields you send are changed. Changing `tier` recomputes `monthly_limit`
+automatically. Set `clear_expiry: true` to remove an expiration date entirely.
+    """,
+    response_description="The updated API key details",
+    response_model=APIResponse,
+    responses=STANDARD_RESPONSES,
+)
+async def update_key(
+    request: APIKeyUpdate,
+    key_id: int = Path(..., description="The unique ID of the API key to update"),
+    _: bool = Depends(require_admin)
+):
+    """Update an API key's name/tier/expiry. Admin only."""
+    updated = update_api_key(
+        key_id,
+        name=request.name,
+        tier=request.tier,
+        expires_in_days=request.expires_in_days,
+        clear_expiry=request.clear_expiry,
+    )
+    if not updated:
+        return api_error("API key not found", status_code=404)
+    return api_success("API key updated", updated)
 
 
 @router.get(

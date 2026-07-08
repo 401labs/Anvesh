@@ -1,0 +1,18 @@
+# deps
+/node_modules
+
+# test & build
+/coverage
+/.next/
+/out/
+/build
+*.tsbuildinfo
+
+# misc
+.DS_Store
+*.pem
+
+# others
+.env*.local
+.vercel
+next-env.d.ts

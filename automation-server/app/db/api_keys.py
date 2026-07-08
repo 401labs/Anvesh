@@ -144,16 +144,78 @@ def get_api_key_by_id(key_id: int) -> Optional[Dict]:
             return dict(result) if result else None
 
 
-def list_api_keys() -> List[Dict]:
-    """List all API keys (masked) for admin."""
+def list_api_keys(limit: int = 20, offset: int = 0) -> List[Dict]:
+    """List a page of API keys (masked) for admin, most recently created first."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute('''
                 SELECT id, name, key_prefix, tier, monthly_limit, is_active, created_at, expires_at
                 FROM api_keys
                 ORDER BY created_at DESC
-            ''')
+                LIMIT %s OFFSET %s
+            ''', (limit, offset))
             return [dict(row) for row in cur.fetchall()]
+
+
+def count_api_keys() -> int:
+    """Count the total number of API keys."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT COUNT(*) AS count FROM api_keys')
+            result = cur.fetchone()
+            return result["count"] if result else 0
+
+
+def update_api_key(
+    key_id: int,
+    name: Optional[str] = None,
+    tier: Optional[str] = None,
+    expires_in_days: Optional[int] = None,
+    clear_expiry: bool = False,
+) -> Optional[Dict]:
+    """
+    Update an API key's name/tier/expiry. Only fields explicitly passed are changed.
+    Setting `tier` also recomputes `monthly_limit` from the new tier.
+    Returns the updated key info, or None if the key doesn't exist.
+    """
+    fields = []
+    values = []
+
+    if name is not None:
+        fields.append("name = %s")
+        values.append(name)
+
+    if tier is not None:
+        fields.append("tier = %s")
+        values.append(tier)
+        fields.append("monthly_limit = %s")
+        values.append(get_tier_limit(tier))
+
+    if clear_expiry:
+        fields.append("expires_at = NULL")
+    elif expires_in_days is not None:
+        fields.append("expires_at = %s")
+        values.append(datetime.now() + timedelta(days=expires_in_days))
+
+    if not fields:
+        return get_api_key_by_id(key_id)
+
+    values.append(key_id)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f'''
+                UPDATE api_keys SET {", ".join(fields)}
+                WHERE id = %s
+                RETURNING id
+            ''', values)
+            result = cur.fetchone()
+            conn.commit()
+
+            if not result:
+                return None
+
+    return get_api_key_by_id(key_id)
 
 
 def revoke_api_key(key_id: int) -> bool:

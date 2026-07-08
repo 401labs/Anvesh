@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Any, Optional, Generic, TypeVar
 from datetime import datetime, date
+from decimal import Decimal
 
 # Generic type for response data
 T = TypeVar('T')
@@ -76,6 +77,8 @@ def _serialize_value(val: Any) -> Any:
     """Convert non-JSON-serializable values."""
     if isinstance(val, (datetime, date)):
         return val.isoformat()
+    if isinstance(val, Decimal):
+        return float(val)
     return val
 
 

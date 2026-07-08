@@ -50,3 +50,10 @@ Thumbs.db
 # Playwright
 playwright-screenshots/
 test-results/
+
+# CSV export output (automation-server)
+automation-server/data/
+
+# Node
+node_modules/
+.next/
