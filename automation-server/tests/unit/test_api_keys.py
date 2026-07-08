@@ -7,6 +7,9 @@ from app.db.api_keys import (
     create_api_key,
     validate_api_key,
     get_api_key_by_id,
+    list_api_keys,
+    count_api_keys,
+    update_api_key,
     delete_api_key,
     log_usage,
     get_usage_stats
@@ -57,6 +60,47 @@ class TestAPIKeyValidation:
         """Empty key should return None."""
         result = validate_api_key("")
         assert result is None
+
+
+class TestAPIKeyPaginationAndUpdate:
+    """Tests for listing/counting/updating API keys."""
+
+    def test_list_and_count(self):
+        """list_api_keys and count_api_keys should agree on presence of a new key."""
+        key_data = create_api_key(name="Pagination Test", tier="free")
+
+        before = count_api_keys()
+        page = list_api_keys(limit=before + 10, offset=0)
+
+        assert any(k["id"] == key_data["id"] for k in page)
+
+        delete_api_key(key_data["id"])
+
+    def test_update_tier_recomputes_limit(self):
+        """Changing tier should recompute monthly_limit."""
+        key_data = create_api_key(name="Update Test", tier="free")
+
+        updated = update_api_key(key_data["id"], tier="enterprise")
+
+        assert updated["tier"] == "enterprise"
+        assert updated["monthly_limit"] == -1
+
+        delete_api_key(key_data["id"])
+
+    def test_update_nonexistent_key(self):
+        """Updating a key that doesn't exist should return None."""
+        result = update_api_key(999999999, name="Nope")
+        assert result is None
+
+    def test_clear_expiry(self):
+        """clear_expiry should remove expires_at."""
+        key_data = create_api_key(name="Expiry Test", tier="free", expires_in_days=30)
+        assert key_data["expires_at"] is not None
+
+        updated = update_api_key(key_data["id"], clear_expiry=True)
+        assert updated["expires_at"] is None
+
+        delete_api_key(key_data["id"])
 
 
 class TestUsageLogging:

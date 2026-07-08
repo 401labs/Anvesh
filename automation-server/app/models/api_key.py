@@ -27,6 +27,30 @@ class APIKeyCreate(BaseModel):
 
 
 
+class APIKeyUpdate(BaseModel):
+    """Request model for updating an existing API key. All fields optional; only send what changes."""
+    name: Optional[str] = Field(
+        default=None,
+        description="New name for this API key",
+        examples=["Renamed Key"]
+    )
+    tier: Optional[str] = Field(
+        default=None,
+        description="New pricing tier. Recomputes monthly_limit. Options: free, pro, enterprise",
+        examples=["pro"]
+    )
+    expires_in_days: Optional[int] = Field(
+        default=None,
+        description="Set expiry to N days from now.",
+        ge=1,
+        examples=[30]
+    )
+    clear_expiry: bool = Field(
+        default=False,
+        description="If true, removes any expiration date (takes precedence over expires_in_days)."
+    )
+
+
 class APIKeyResponse(BaseModel):
     """Response model for API key creation (includes the actual key - shown once)."""
     id: int
@@ -53,7 +77,7 @@ class APIKeyInfo(BaseModel):
 
 class APIKeyData(BaseModel):
     """Data passed to route handlers after auth validation."""
-    id: int
+    id: Optional[int] = None
     name: str
     tier: str
     monthly_limit: int

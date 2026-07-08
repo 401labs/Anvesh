@@ -72,5 +72,45 @@ class TaskStopResponse(BaseModel):
 
 class AllTasksResponse(BaseModel):
     """Response containing all automation tasks."""
-    
+
     tasks: dict = Field(description="Dictionary of all tasks keyed by task ID")
+
+
+class LeadCreate(BaseModel):
+    """Request model for manually creating a lead."""
+
+    business_name: str = Field(..., examples=["Joe's Coffee"])
+    industry: str = Field(..., examples=["coffee shop"])
+    location: str = Field(..., examples=["Seattle"])
+    address: str = Field(..., examples=["123 Main St, Seattle, WA"])
+    category: Optional[str] = Field(default=None, examples=["Cafe"])
+    rating: Optional[float] = Field(default=None, ge=0, le=5)
+    review_count: Optional[int] = Field(default=None, ge=0)
+    is_claimed: Optional[bool] = None
+    has_website: bool = False
+    website_url: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = Field(default=None, examples=["hello@joescoffee.com"])
+
+
+class LeadUpdate(BaseModel):
+    """Request model for updating a lead. All fields optional; only send what changes."""
+
+    business_name: Optional[str] = None
+    industry: Optional[str] = None
+    category: Optional[str] = None
+    location: Optional[str] = None
+    address: Optional[str] = None
+    rating: Optional[float] = Field(default=None, ge=0, le=5)
+    review_count: Optional[int] = Field(default=None, ge=0)
+    is_claimed: Optional[bool] = None
+    has_website: Optional[bool] = None
+    website_url: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class LeadBulkDeleteRequest(BaseModel):
+    """Request model for deleting multiple leads at once."""
+
+    ids: List[int] = Field(..., min_length=1, description="Lead IDs to delete", examples=[[1, 2, 3]])

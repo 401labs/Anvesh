@@ -35,13 +35,42 @@ curl -X POST http://localhost:8000/admin/keys \
 
 ---
 
-### List All API Keys
-`GET /admin/keys`
+### List API Keys (paginated)
+`GET /admin/keys?limit=20&offset=0`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "keys": [{ "id": 1, "name": "My App", "tier": "free", "..." : "..." }],
+    "total": 42,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
 
 ---
 
 ### Get API Key Details
 `GET /admin/keys/{id}`
+
+---
+
+### Update API Key
+`PATCH /admin/keys/{id}`
+
+Only send the fields you want to change.
+
+```bash
+curl -X PATCH http://localhost:8000/admin/keys/1 \
+  -H "X-Admin-Secret: your-secret" \
+  -H "Content-Type: application/json" \
+  -d '{"tier": "pro"}'
+```
+
+`clear_expiry: true` removes an expiration date entirely.
 
 ---
 

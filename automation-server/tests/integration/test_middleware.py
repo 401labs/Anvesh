@@ -8,26 +8,31 @@ class TestAPIKeyMiddleware:
     """Tests for API key authentication middleware."""
     
     def test_missing_api_key_header(self, client):
-        """Request without X-API-Key should return 422 (missing required header)."""
+        """Request without X-API-Key or X-Admin-Secret should return 401."""
         response = client.get("/automation/tasks")
-        
-        # FastAPI returns 422 for missing required headers
-        assert response.status_code == 422
-    
+
+        assert response.status_code == 401
+
     def test_invalid_api_key(self, client):
         """Request with invalid API key should return 401."""
         response = client.get(
             "/automation/tasks",
             headers={"X-API-Key": "anv_invalid_key"}
         )
-        
+
         assert response.status_code == 401
         assert "Invalid or expired" in response.json()["detail"]
-    
+
     def test_valid_api_key_passes(self, client, user_headers):
         """Request with valid API key should succeed."""
         response = client.get("/automation/tasks", headers=user_headers)
-        
+
+        assert response.status_code == 200
+
+    def test_admin_secret_bypasses_api_key(self, client, admin_headers):
+        """Request with a valid X-Admin-Secret (no X-API-Key) should succeed."""
+        response = client.get("/automation/tasks", headers=admin_headers)
+
         assert response.status_code == 200
 
 
