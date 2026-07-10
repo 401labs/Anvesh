@@ -29,6 +29,17 @@ from app.db import (
     bulk_delete_leads,
     get_lead_filter_options,
     log_usage,
+    LeadInsertError,
+    create_task,
+    get_task,
+    list_tasks,
+    count_tasks,
+    set_task_status,
+    set_task_running,
+    get_task_stop_flag,
+    request_stop,
+    request_stop_all,
+    delete_task as delete_task_row,
 )
 from app.middleware.auth import get_api_key
 from app.helpers import api_success, api_error
@@ -36,13 +47,55 @@ from app.helpers.response import APIResponse, STANDARD_RESPONSES
 from typing import Optional
 import csv
 import os
+import time
 import uuid
-from datetime import datetime
 
 router = APIRouter(prefix="/automation", tags=["Automation"])
 
-# In-Memory Storage for Tasks
-TASKS = {}
+# Hard ceiling on how long a single task may run, regardless of how many
+# locations or how "unlimited" the per-location cap is. Without this, a scrape
+# stuck in a selector-wait loop (Google Maps markup changed, network stall,
+# etc.) stays "running" forever — observed in practice as a task still marked
+# running=true 30+ minutes after its scrape thread stopped making progress,
+# with no way for an operator to distinguish "still working" from "wedged".
+MAX_TASK_DURATION_SECONDS = 3600  # 1 hour
+
+
+def make_stop_checker(task_id: str, poll_interval: float = 2.0, max_duration_seconds: Optional[float] = None):
+    """
+    Returns a callable that reports whether `task_id` has been flagged to stop,
+    backed by the `automation_tasks.stop` column so a stop request handled by a
+    different worker (or process) is still observed. Throttled to one DB read per
+    `poll_interval` seconds regardless of how often the scraper calls it.
+
+    Also self-terminates once `max_duration_seconds` has elapsed since the
+    checker was created — a task can never run forever, even if nothing ever
+    flips its `stop` column. Callers can distinguish the two via `.timed_out()`.
+    `max_duration_seconds` defaults to the module-level `MAX_TASK_DURATION_SECONDS`,
+    looked up at call time (not bound as a literal default) so tests can
+    monkeypatch the module constant and have it actually take effect.
+    """
+    if max_duration_seconds is None:
+        max_duration_seconds = MAX_TASK_DURATION_SECONDS
+
+    state = {"last_check": 0.0, "stop": False, "timed_out": False}
+    start = time.monotonic()
+
+    def check() -> bool:
+        if not state["stop"] and time.monotonic() - start > max_duration_seconds:
+            state["stop"] = True
+            state["timed_out"] = True
+            return True
+
+        now = time.monotonic()
+        if now - state["last_check"] >= poll_interval:
+            state["last_check"] = now
+            if get_task_stop_flag(task_id):
+                state["stop"] = True
+        return state["stop"]
+
+    check.timed_out = lambda: state["timed_out"]
+    return check
 
 
 def background_task_scraper(task_id: str, request: ScrapeRequest):
@@ -50,41 +103,51 @@ def background_task_scraper(task_id: str, request: ScrapeRequest):
     Runs the scraper in the background for a specific task ID.
     """
     print(f"▶️ Automation Started: {request.industry} (ID: {task_id})")
-    TASKS[task_id]["status"] = TaskStatus.RUNNING
-    
+    set_task_status(task_id, TaskStatus.RUNNING)
+    should_stop = make_stop_checker(task_id)
+
+    def finish_as_stopped_or_timed_out():
+        if should_stop.timed_out():
+            minutes = MAX_TASK_DURATION_SECONDS // 60
+            set_task_status(task_id, TaskStatus.ERROR, error=f"Scrape timed out after {minutes} minutes")
+            print(f"⏱️ Automation {task_id} timed out after {minutes} minutes.")
+        else:
+            set_task_status(task_id, TaskStatus.STOPPED)
+            print(f"🛑 Automation {task_id} stopped by user.")
+
     try:
         total_locations = len(request.locations)
         for i, loc in enumerate(request.locations):
-            if TASKS[task_id]["stop"]:
-                TASKS[task_id]["status"] = TaskStatus.STOPPED
-                print(f"🛑 Automation {task_id} stopped by user.")
+            if should_stop():
+                finish_as_stopped_or_timed_out()
                 break
-                
+
             print(f"📍 [{i+1}/{total_locations}] Processing location: {loc} (ID: {task_id})")
-            
-            should_stop = lambda: TASKS[task_id]["stop"]
-            
+
             scrape_google_maps(
-                industry=request.industry, 
-                location=loc, 
+                industry=request.industry,
+                location=loc,
                 total=request.limit_per_location,
-                stop_signal=should_stop
+                stop_signal=should_stop,
+                headless=request.headless
             )
-            
-            if not TASKS[task_id]["stop"]:
-                print(f"✅ Finished location: {loc}. Checking next...")
-        
-        # If we finished the loop and weren't stopped
-        if not TASKS[task_id]["stop"]:
-             TASKS[task_id]["status"] = TaskStatus.COMPLETED
+
+            if should_stop():
+                finish_as_stopped_or_timed_out()
+                break
+
+            print(f"✅ Finished location: {loc}. Checking next...")
+        else:
+            # Loop ran to completion without ever `break`-ing out via a stop/timeout.
+            set_task_status(task_id, TaskStatus.COMPLETED)
 
     except Exception as e:
-        TASKS[task_id]["status"] = TaskStatus.ERROR
-        TASKS[task_id]["error"] = str(e)
+        set_task_status(task_id, TaskStatus.ERROR, error=str(e))
         print(f"❌ Automation {task_id} Error: {e}")
     finally:
-        TASKS[task_id]["running"] = False
-        print(f"🏁 Automation {task_id} Finished. Status: {TASKS[task_id]['status']}")
+        set_task_running(task_id, False)
+        finished_task = get_task(task_id)
+        print(f"🏁 Automation {task_id} Finished. Status: {finished_task['status'] if finished_task else 'unknown'}")
 
 
 @router.post(
@@ -117,16 +180,8 @@ def start_automation(
         log_usage(api_key.id, "/automation/start", 0)
     
     task_id = str(uuid.uuid4())
-    TASKS[task_id] = {
-        "id": task_id,
-        "config": request.model_dump(),
-        "running": True,
-        "stop": False,
-        "status": TaskStatus.IDLE,
-        "error": None,
-        "created_at": datetime.now().isoformat(),
-    }
-    
+    create_task(task_id, request.model_dump())
+
     background_tasks.add_task(background_task_scraper, task_id, request)
     return api_success("Automation task started", {"task_id": task_id}, status_code=201)
 
@@ -149,12 +204,8 @@ def stop_all_automation(api_key: APIKeyData = Depends(get_api_key)):
     if api_key.id is not None:
         log_usage(api_key.id, "/automation/stop", 0)
     
-    count_stopped = 0
-    for tid, task in TASKS.items():
-        if task["running"]:
-            task["stop"] = True
-            count_stopped += 1
-    
+    count_stopped = request_stop_all()
+
     if count_stopped == 0:
         return api_success("No running automation found", {"tasks_stopped": 0})
         
@@ -174,14 +225,14 @@ def stop_task(
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """Stop a specific automation task by ID."""
-    task = TASKS.get(task_id)
+    task = get_task(task_id)
     if not task:
         return api_error("Task not found", status_code=404)
-    
+
     if not task["running"]:
         return api_success("Task is not running", {"task_id": task_id, "status": task["status"]})
-    
-    task["stop"] = True
+
+    request_stop(task_id)
     return api_success("Stop signal sent", {"task_id": task_id})
 
 
@@ -207,7 +258,7 @@ def get_task_status(
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """Get the status of a specific automation task."""
-    task = TASKS.get(task_id)
+    task = get_task(task_id)
     if not task:
         return api_error("Task not found", status_code=404)
     return api_success("Task status retrieved", task)
@@ -220,8 +271,7 @@ def get_task_status(
 Retrieve a page of automation tasks (running and completed), most recently
 started first. Use `limit` and `offset` to paginate.
 
-This returns the task history for the current session.
-Note: Tasks are stored in memory and will be cleared on server restart.
+This returns the full task history, persisted in Postgres.
     """,
     response_description="A page of tasks plus the total task count",
     response_model=APIResponse,
@@ -233,9 +283,9 @@ def get_all_tasks(
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """List automation tasks, paginated."""
-    all_tasks = sorted(TASKS.values(), key=lambda t: t.get("created_at", ""), reverse=True)
-    page = all_tasks[offset:offset + limit]
-    return api_success("Tasks retrieved", {"tasks": page, "total": len(all_tasks), "limit": limit, "offset": offset})
+    page = list_tasks(limit=limit, offset=offset)
+    total = count_tasks()
+    return api_success("Tasks retrieved", {"tasks": page, "total": total, "limit": limit, "offset": offset})
 
 
 @router.delete(
@@ -249,19 +299,19 @@ running can be deleted — stop the task first if it's still running.
     response_model=APIResponse,
     responses=STANDARD_RESPONSES,
 )
-def delete_task(
+def delete_task_endpoint(
     task_id: str = Path(..., description="The unique task ID to delete"),
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """Delete a finished task."""
-    task = TASKS.get(task_id)
+    task = get_task(task_id)
     if not task:
         return api_error("Task not found", status_code=404)
 
     if task["running"]:
         return api_error("Cannot delete a running task — stop it first", status_code=400)
 
-    del TASKS[task_id]
+    delete_task_row(task_id)
     return api_success(f"Task {task_id} deleted")
 
 
@@ -274,6 +324,8 @@ def _lead_filters_from_query(
     is_claimed: Optional[bool],
     min_rating: Optional[float],
     search: Optional[str],
+    status: Optional[str],
+    min_score: Optional[int],
 ) -> dict:
     return {
         "industry": industry,
@@ -284,6 +336,8 @@ def _lead_filters_from_query(
         "is_claimed": is_claimed,
         "min_rating": min_rating,
         "search": search,
+        "status": status,
+        "min_score": min_score,
     }
 
 
@@ -310,6 +364,11 @@ Use `limit`/`offset` to paginate, any of the filter params to narrow results,
 and `sort_by`/`sort_dir` to order them. `/automation/export` accepts the same
 filter params and downloads a CSV of exactly what matches (or everything, if
 no filters are given).
+
+Each lead includes a computed `score` (0-100): higher rating, more reviews, no
+website, and an unclaimed listing all push it up — a rough "how worth pitching
+is this business" ranking. Sort by it with `sort_by=score`, or narrow to the
+best prospects with `min_score`.
     """,
     response_description="A page of leads plus the total matching count",
     response_model=APIResponse,
@@ -326,12 +385,14 @@ def list_leads(
     is_claimed: Optional[bool] = Query(None, description="Filter to claimed/unclaimed Google Business listings"),
     min_rating: Optional[float] = Query(None, ge=0, le=5, description="Minimum rating (inclusive)"),
     search: Optional[str] = Query(None, description="Free-text search across business name, address, and phone"),
-    sort_by: str = Query("created_at", pattern="^(created_at|rating|review_count|business_name)$"),
+    status: Optional[str] = Query(None, description="Filter to leads at a specific outreach status (new/contacted/replied/interested/won/lost)"),
+    min_score: Optional[int] = Query(None, ge=0, le=100, description="Minimum opportunity score (inclusive) — see 'score' in the response"),
+    sort_by: str = Query("created_at", pattern="^(created_at|rating|review_count|business_name|score)$"),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """List leads from the database, paginated, filtered, and sorted."""
-    filters = _lead_filters_from_query(industry, location, category, has_website, has_email, is_claimed, min_rating, search)
+    filters = _lead_filters_from_query(industry, location, category, has_website, has_email, is_claimed, min_rating, search, status, min_score)
     leads = get_leads(limit=limit, offset=offset, filters=filters, sort_by=sort_by, sort_dir=sort_dir)
     total = count_leads(filters=filters)
     return api_success("Leads retrieved", {"leads": leads, "total": total, "limit": limit, "offset": offset})
@@ -351,7 +412,11 @@ def create_lead_endpoint(
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """Manually create a lead."""
-    lead = create_lead(request.model_dump())
+    try:
+        lead = create_lead(request.model_dump())
+    except LeadInsertError as e:
+        return api_error(f"Could not create lead: {e}", status_code=422)
+
     if not lead:
         return api_error(
             "A lead with this business name and address already exists",
@@ -441,13 +506,15 @@ def export_leads(
     is_claimed: Optional[bool] = Query(None),
     min_rating: Optional[float] = Query(None, ge=0, le=5),
     search: Optional[str] = Query(None),
+    status: Optional[str] = Query(None, description="Filter to leads at a specific outreach status (new/contacted/replied/interested/won/lost)"),
+    min_score: Optional[int] = Query(None, ge=0, le=100, description="Minimum opportunity score (inclusive)"),
     api_key: APIKeyData = Depends(get_api_key)
 ):
     """Export leads matching the given filters (or all leads) to a CSV file."""
     if api_key.id is not None:
         log_usage(api_key.id, "/automation/export", 0)
 
-    filters = _lead_filters_from_query(industry, location, category, has_website, has_email, is_claimed, min_rating, search)
+    filters = _lead_filters_from_query(industry, location, category, has_website, has_email, is_claimed, min_rating, search, status, min_score)
     leads = get_all_leads(filters=filters)
     if not leads:
         return api_success("No data found", {"count": 0})

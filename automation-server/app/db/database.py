@@ -69,18 +69,37 @@ def init_db():
                         website_url TEXT,
                         phone VARCHAR(255),
                         email VARCHAR(255),
+                        maps_url TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE (business_name, address)
                     )
                 ''')
-                # Migration for pre-existing databases created before the email column existed.
+                # Migrations for pre-existing databases created before these columns existed.
                 cur.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS email VARCHAR(255)')
+                cur.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS maps_url TEXT')
+                cur.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'new'")
                 conn.commit()
         print("✅ PostgreSQL Table 'leads' initialized.")
-        
+
         # Initialize API key tables
         from app.db.api_keys import create_tables as create_api_key_tables
         create_api_key_tables()
+
+        # Initialize automation task tables
+        from app.db.tasks import create_tables as create_task_tables
+        create_task_tables()
+
+        # Initialize outreach tables
+        from app.db.outreach import create_tables as create_outreach_tables
+        create_outreach_tables()
+
+        # Initialize scheduled scrape tables
+        from app.db.schedules import create_tables as create_schedule_tables
+        create_schedule_tables()
+
+        # Initialize runtime-configurable settings table
+        from app.db.app_settings import create_tables as create_app_settings_tables
+        create_app_settings_tables()
     except Exception as e:
         print(f"❌ Table Init Error: {e}")
 
@@ -93,9 +112,9 @@ def insert_lead(lead: Dict):
                     INSERT INTO leads (
                         business_name, industry, category, location, address,
                         rating, review_count, is_claimed,
-                        has_website, website_url, phone, email
+                        has_website, website_url, phone, email, maps_url
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (business_name, address) DO NOTHING
                     RETURNING id
                 '''
@@ -111,7 +130,8 @@ def insert_lead(lead: Dict):
                     lead["has_website"],
                     lead["website_url"],
                     lead["phone"],
-                    lead.get("email")
+                    lead.get("email"),
+                    lead.get("maps_url")
                 )
                 cur.execute(query, values)
                 result = cur.fetchone()
@@ -125,11 +145,25 @@ def insert_lead(lead: Dict):
         print(f"❌ Insert Error: {e}")
         return False
 
+# "Hot prospect" score, 0-100: high rating + many reviews + no website + unclaimed
+# listing scores highest — those are the businesses most worth pitching. Computed
+# on read (not stored) so it's always current with the lead's live data, and never
+# needs a backfill/migration when the formula changes.
+LEAD_SCORE_SQL = """(
+    ROUND(
+        (COALESCE(rating, 0) * 12)
+        + (LEAST(COALESCE(review_count, 0), 500) / 500.0 * 20)
+        + (CASE WHEN has_website = FALSE THEN 15 ELSE 0 END)
+        + (CASE WHEN is_claimed = FALSE THEN 5 ELSE 0 END)
+    )
+)::int"""
+
 LEAD_SORT_COLUMNS = {
     "created_at": "created_at",
     "rating": "rating",
     "review_count": "review_count",
     "business_name": "business_name",
+    "score": LEAD_SCORE_SQL,
 }
 
 
@@ -142,6 +176,9 @@ def _build_lead_filters(filters: Optional[Dict]) -> tuple:
     if filters.get("industry"):
         clauses.append("industry ILIKE %s")
         params.append(filters["industry"])
+    if filters.get("status"):
+        clauses.append("status = %s")
+        params.append(filters["status"])
     if filters.get("location"):
         clauses.append("location ILIKE %s")
         params.append(filters["location"])
@@ -162,6 +199,9 @@ def _build_lead_filters(filters: Optional[Dict]) -> tuple:
     if filters.get("min_rating") is not None:
         clauses.append("rating >= %s")
         params.append(filters["min_rating"])
+    if filters.get("min_score") is not None:
+        clauses.append(f"{LEAD_SCORE_SQL} >= %s")
+        params.append(filters["min_score"])
     if filters.get("search"):
         like = f"%{filters['search']}%"
         clauses.append("(business_name ILIKE %s OR address ILIKE %s OR phone ILIKE %s)")
@@ -177,7 +217,10 @@ def get_all_leads(filters: Optional[Dict] = None):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(f"SELECT * FROM leads {where_sql} ORDER BY created_at DESC", params)
+                cur.execute(
+                    f"SELECT *, {LEAD_SCORE_SQL} AS score FROM leads {where_sql} ORDER BY created_at DESC",
+                    params
+                )
                 return cur.fetchall()
     except Exception as e:
         print(f"❌ Fetch Error: {e}")
@@ -193,7 +236,7 @@ def get_leads(limit: int = 20, offset: int = 0, filters: Optional[Dict] = None, 
         with get_connection() as conn:
             with conn.cursor() as cur:
                 query = (
-                    f"SELECT * FROM leads {where_sql} "
+                    f"SELECT *, {LEAD_SCORE_SQL} AS score FROM leads {where_sql} "
                     f"ORDER BY {sort_column} {sort_direction} NULLS LAST LIMIT %s OFFSET %s"
                 )
                 cur.execute(query, params + [limit, offset])
@@ -215,6 +258,104 @@ def count_leads(filters: Optional[Dict] = None) -> int:
     except Exception as e:
         print(f"❌ Count Error: {e}")
         return 0
+
+
+def get_lead_stats() -> Dict:
+    """Aggregate lead counts (by status, by score tier, and a few flags) for the analytics dashboard."""
+    stats = {
+        "total": 0,
+        "by_status": {"new": 0, "contacted": 0, "replied": 0, "interested": 0, "won": 0, "lost": 0},
+        "by_score_tier": {"hot": 0, "warm": 0, "cool": 0},
+        "with_email": 0,
+        "with_website": 0,
+        "unclaimed": 0,
+    }
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS count FROM leads")
+                stats["total"] = cur.fetchone()["count"]
+
+                cur.execute("SELECT status, COUNT(*) AS count FROM leads GROUP BY status")
+                for row in cur.fetchall():
+                    if row["status"] in stats["by_status"]:
+                        stats["by_status"][row["status"]] = row["count"]
+
+                cur.execute(f"""
+                    SELECT
+                        CASE
+                            WHEN {LEAD_SCORE_SQL} >= 70 THEN 'hot'
+                            WHEN {LEAD_SCORE_SQL} >= 40 THEN 'warm'
+                            ELSE 'cool'
+                        END AS tier,
+                        COUNT(*) AS count
+                    FROM leads
+                    GROUP BY tier
+                """)
+                for row in cur.fetchall():
+                    stats["by_score_tier"][row["tier"]] = row["count"]
+
+                cur.execute("SELECT COUNT(*) AS count FROM leads WHERE email IS NOT NULL AND email != ''")
+                stats["with_email"] = cur.fetchone()["count"]
+
+                cur.execute("SELECT COUNT(*) AS count FROM leads WHERE has_website = TRUE")
+                stats["with_website"] = cur.fetchone()["count"]
+
+                cur.execute("SELECT COUNT(*) AS count FROM leads WHERE is_claimed = FALSE")
+                stats["unclaimed"] = cur.fetchone()["count"]
+    except Exception as e:
+        print(f"❌ Lead Stats Error: {e}")
+    return stats
+
+
+def get_leads_by_day(days: int = 30) -> List[Dict]:
+    """Leads scraped per day for the last `days` days, oldest first."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DATE(created_at) AS date, COUNT(*) AS count
+                    FROM leads
+                    WHERE created_at >= CURRENT_DATE - (%s * INTERVAL '1 day')
+                    GROUP BY DATE(created_at)
+                    ORDER BY date ASC
+                """, (days,))
+                return cur.fetchall()
+    except Exception as e:
+        print(f"❌ Leads By Day Error: {e}")
+        return []
+
+
+def get_top_industries(limit: int = 10) -> List[Dict]:
+    """Most-scraped industries, most first."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT industry, COUNT(*) AS count FROM leads
+                    WHERE industry IS NOT NULL AND industry != ''
+                    GROUP BY industry ORDER BY count DESC LIMIT %s
+                """, (limit,))
+                return cur.fetchall()
+    except Exception as e:
+        print(f"❌ Top Industries Error: {e}")
+        return []
+
+
+def get_top_locations(limit: int = 10) -> List[Dict]:
+    """Most-scraped locations, most first."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT location, COUNT(*) AS count FROM leads
+                    WHERE location IS NOT NULL AND location != ''
+                    GROUP BY location ORDER BY count DESC LIMIT %s
+                """, (limit,))
+                return cur.fetchall()
+    except Exception as e:
+        print(f"❌ Top Locations Error: {e}")
+        return []
 
 
 def get_lead_filter_options() -> Dict:
@@ -249,11 +390,34 @@ def get_lead(lead_id: int) -> Optional[Dict]:
         return None
 
 
+def get_lead_by_email(email: str) -> Optional[Dict]:
+    """Retrieve a single lead by its email address (case-insensitive). Used to match inbound replies."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM leads WHERE LOWER(email) = LOWER(%s) LIMIT 1", (email,))
+                return cur.fetchone()
+    except Exception as e:
+        print(f"❌ Fetch Error: {e}")
+        return None
+
+
+class LeadInsertError(Exception):
+    """
+    Raised by create_lead() for a failure OTHER than the (business_name,
+    address) unique conflict — e.g. a value exceeding a column's length limit.
+    Kept distinct from the "returns None" conflict case so callers don't
+    misreport a genuine data error as a 409 duplicate.
+    """
+    pass
+
+
 def create_lead(lead: Dict) -> Optional[Dict]:
     """
     Manually create a lead (as opposed to insert_lead, used by the scraper).
     Returns the created row, or None if a lead with the same
-    (business_name, address) already exists.
+    (business_name, address) already exists. Raises LeadInsertError for any
+    other failure.
     """
     try:
         with get_connection() as conn:
@@ -262,9 +426,9 @@ def create_lead(lead: Dict) -> Optional[Dict]:
                     INSERT INTO leads (
                         business_name, industry, category, location, address,
                         rating, review_count, is_claimed,
-                        has_website, website_url, phone, email
+                        has_website, website_url, phone, email, maps_url, status
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (business_name, address) DO NOTHING
                     RETURNING *
                 ''', (
@@ -280,18 +444,20 @@ def create_lead(lead: Dict) -> Optional[Dict]:
                     lead.get("website_url"),
                     lead.get("phone"),
                     lead.get("email"),
+                    lead.get("maps_url"),
+                    lead.get("status", "new"),
                 ))
                 result = cur.fetchone()
                 conn.commit()
                 return result
     except Exception as e:
         print(f"❌ Insert Error: {e}")
-        return None
+        raise LeadInsertError(str(e)) from e
 
 
 LEAD_UPDATABLE_FIELDS = (
     "business_name", "industry", "category", "location", "address",
-    "rating", "review_count", "is_claimed", "has_website", "website_url", "phone", "email",
+    "rating", "review_count", "is_claimed", "has_website", "website_url", "phone", "email", "maps_url", "status",
 )
 
 

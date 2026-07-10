@@ -9,8 +9,7 @@ from fastapi import APIRouter, Depends
 from datetime import datetime
 
 from app.middleware.auth import require_admin
-from app.routers.automation import TASKS
-from app.models.automation import TaskStatus
+from app.db import list_all_tasks, list_running_tasks, get_task_counts, request_stop_all
 from app.helpers import api_success
 from app.helpers.response import APIResponse, STANDARD_RESPONSES
 
@@ -32,17 +31,11 @@ Useful for monitoring system-wide scraping activity.
 )
 async def admin_get_all_tasks(_: bool = Depends(require_admin)):
     """Get all automation tasks system-wide. Admin only."""
-    task_summary = {
-        "total": len(TASKS),
-        "running": sum(1 for t in TASKS.values() if t["running"]),
-        "completed": sum(1 for t in TASKS.values() if t["status"] == TaskStatus.COMPLETED),
-        "stopped": sum(1 for t in TASKS.values() if t["status"] == TaskStatus.STOPPED),
-        "error": sum(1 for t in TASKS.values() if t["status"] == TaskStatus.ERROR),
-    }
-    
+    task_summary = get_task_counts()
+
     return api_success("All tasks retrieved", {
         "summary": task_summary,
-        "tasks": TASKS
+        "tasks": {t["id"]: t for t in list_all_tasks()}
     })
 
 
@@ -61,12 +54,8 @@ Use with caution!
 )
 async def admin_stop_all_tasks(_: bool = Depends(require_admin)):
     """Force stop all running tasks system-wide. Admin only."""
-    count_stopped = 0
-    for tid, task in TASKS.items():
-        if task["running"]:
-            task["stop"] = True
-            count_stopped += 1
-    
+    count_stopped = request_stop_all()
+
     return api_success(
         f"Stop signal sent to {count_stopped} tasks",
         {"tasks_stopped": count_stopped}
@@ -91,35 +80,26 @@ Returns aggregate data about:
 )
 async def admin_get_stats(_: bool = Depends(require_admin)):
     """Get system-wide automation statistics. Admin only."""
-    running_count = sum(1 for t in TASKS.values() if t["running"])
-    completed_count = sum(1 for t in TASKS.values() if t["status"] == TaskStatus.COMPLETED)
-    stopped_count = sum(1 for t in TASKS.values() if t["status"] == TaskStatus.STOPPED)
-    error_count = sum(1 for t in TASKS.values() if t["status"] == TaskStatus.ERROR)
-    
+    counts = get_task_counts()
+    running_tasks = list_running_tasks()
+
     # Calculate locations and industries being scraped
     active_industries = set()
     active_locations = set()
-    for task in TASKS.values():
-        if task["running"]:
-            config = task.get("config", {})
-            active_industries.add(config.get("industry", "unknown"))
-            for loc in config.get("locations", []):
-                active_locations.add(loc)
-    
+    for task in running_tasks:
+        config = task.get("config", {})
+        active_industries.add(config.get("industry", "unknown"))
+        for loc in config.get("locations", []):
+            active_locations.add(loc)
+
     stats = {
         "timestamp": datetime.now().isoformat(),
-        "tasks": {
-            "total": len(TASKS),
-            "running": running_count,
-            "completed": completed_count,
-            "stopped": stopped_count,
-            "error": error_count,
-        },
+        "tasks": counts,
         "active_scraping": {
             "industries": list(active_industries),
             "locations": list(active_locations),
         },
-        "success_rate": f"{(completed_count / len(TASKS) * 100):.1f}%" if TASKS else "N/A",
+        "success_rate": f"{(counts['completed'] / counts['total'] * 100):.1f}%" if counts["total"] else "N/A",
     }
-    
+
     return api_success("System statistics retrieved", stats)

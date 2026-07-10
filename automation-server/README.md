@@ -101,6 +101,75 @@ curl -X POST http://localhost:8000/automation/start \
 
 See the full [Keys API](docs/api/keys.md) and [Automation API](docs/api/automation.md) docs for every endpoint (listing/revoking/deleting keys, checking usage, task status, CSV export, etc.), or browse the interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs) once the server is running.
 
+## 🖥️ Watching a Scrape Live
+
+Scrapes run headless by default. Set `"headless": false` on `POST /automation/start` (or check "Show browser window" in the web portal) to watch Chromium drive the scrape in real time:
+
+- **Running locally** (`uv run uvicorn`) — a real browser window opens on your machine.
+- **Running in Docker** — there's no display inside the container, so a virtual one is served over noVNC instead. Once a headed task is running, open [http://localhost:6080/vnc.html](http://localhost:6080/vnc.html) in any browser. Set `VNC_PASSWORD` in `.env.local` (see `.env.example`) before exposing port `6080` beyond your own machine — it defaults to the same placeholder as `ADMIN_SECRET` and is otherwise unprotected.
+
+## 📧 Outreach
+
+Once you've scraped some leads, email the ones with an address on file directly from the API — or from the web portal's Outreach page and per-lead actions.
+
+**1. Configure SMTP** in `.env.local` — a Gmail account with an [app password](https://myaccount.google.com/apppasswords) is the easiest option:
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_APP_PASSWORD=your-16-char-app-password
+SMTP_FROM_NAME=Your Name
+```
+Leave these unset to disable sending — emails fail cleanly (logged with an error, not a crash) rather than requiring SMTP before the rest of the app works.
+
+**2. Create a reusable template:**
+```bash
+curl -X POST http://localhost:8000/outreach/templates \
+  -H "X-API-Key: anv_..." -H "Content-Type: application/json" \
+  -d '{"name": "Cold intro", "subject": "Quick question about {{business_name}}", "body": "Hi {{business_name}} team, I noticed you dont have a website yet..."}'
+```
+`{{business_name}}`, `{{industry}}`, `{{location}}`, `{{address}}`, and `{{category}}` are filled in per-lead when you send.
+
+**3. Send it** — to one lead (sent synchronously, result returned immediately) or several (queued in the background):
+```bash
+curl -X POST http://localhost:8000/outreach/email/send \
+  -H "X-API-Key: anv_..." -H "Content-Type: application/json" \
+  -d '{"lead_ids": [12, 13, 14], "template_id": 1}'
+```
+Leads with no email on file are skipped and reported back rather than causing an error. Every send attempt, success or failure, is logged — see `GET /outreach/logs?lead_id=`. A lead's `status` (`new`/`contacted`/`replied`/`interested`/`won`/`lost`, filterable via `GET /automation/leads?status=`) auto-advances from `new` to `contacted` on a successful send. Each lead also carries a `maps_url` — a direct link to its Google Maps listing, handy for a quick sanity check before reaching out, and a computed `score` (0-100) — see [Lead Scoring](#-lead-scoring) below.
+
+**4. Replies auto-detect** — with SMTP configured, IMAP is checked automatically every 2 minutes (reusing the same `SMTP_USER`/`SMTP_APP_PASSWORD`; override `IMAP_HOST`/`IMAP_PORT` only for a non-Gmail inbox) for unseen emails from a known lead's address. A match gets logged (`channel=email`, `status=replied`) and the lead's status advances to `replied`. Trigger a check immediately instead of waiting:
+```bash
+curl -X POST http://localhost:8000/outreach/check-replies -H "X-API-Key: anv_..."
+```
+
+## 🎯 Lead Scoring
+
+Every lead returned by `GET /automation/leads` includes a computed `score` (0-100) — higher rating, more reviews, no website, and an unclaimed listing all push it up, since those are the businesses most worth pitching. Nothing is stored or backfilled; it's computed fresh on every read, so editing a lead's rating immediately changes its score.
+
+```bash
+# Best prospects first
+curl "http://localhost:8000/automation/leads?sort_by=score&sort_dir=desc" -H "X-API-Key: anv_..."
+
+# Only leads scoring 70+
+curl "http://localhost:8000/automation/leads?min_score=70" -H "X-API-Key: anv_..."
+```
+
+## ⏰ Scheduled Scrapes
+
+Instead of starting a scrape by hand every time, save a config to re-run automatically:
+
+```bash
+curl -X POST http://localhost:8000/schedules \
+  -H "X-API-Key: anv_..." -H "Content-Type: application/json" \
+  -d '{"name": "Weekly Mumbai restaurants", "industry": "restaurants", "locations": ["Mumbai"], "interval_hours": 168}'
+```
+The first run happens on the next scheduler tick (within about a minute of creation, polled every 60s — see `app/services/scheduler.py`, a plain Postgres-polling loop with no new dependency), then repeats every `interval_hours` (`24` = daily, `168` = weekly). Pause/resume with `PATCH /schedules/{id}` (`{"enabled": false}`), or fire one immediately with `POST /schedules/{id}/run-now`.
+
+## 📊 Analytics Dashboard
+
+`GET /stats` aggregates everything above into one call: lead counts by status and score tier, leads scraped per day, top industries/locations, outreach send/failure counts, and scrape task counts — what the web portal's Overview page renders. `?days=` (default 30) controls the trend window.
+
 ## 🧪 Testing
 
 Run the comprehensive test suite:
