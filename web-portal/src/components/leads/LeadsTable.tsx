@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, Globe, Mail, Star, Pencil, Trash2 } from 'lucide-react';
+import { Users, Globe, Mail, MapPin, Star, Pencil, Trash2, History } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,8 +9,23 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { deleteJson } from '@/lib/client';
-import { toneClass } from '@/lib/status';
-import type { Lead } from '@/lib/types';
+import { toneClass, type Tone } from '@/lib/status';
+import type { Lead, LeadStatus } from '@/lib/types';
+
+const STATUS_TONE: Record<LeadStatus, Tone> = {
+  new: 'slate',
+  contacted: 'indigo',
+  replied: 'amber',
+  interested: 'amber',
+  won: 'emerald',
+  lost: 'red',
+};
+
+function scoreTone(score: number): Tone {
+  if (score >= 70) return 'emerald';
+  if (score >= 40) return 'amber';
+  return 'slate';
+}
 
 interface LeadsTableProps {
   leads: Lead[];
@@ -19,9 +34,20 @@ interface LeadsTableProps {
   onToggleSelectAll: () => void;
   onEdit: (lead: Lead) => void;
   onChanged: () => void;
+  onSendEmail: (lead: Lead) => void;
+  onViewHistory: (lead: Lead) => void;
 }
 
-export function LeadsTable({ leads, selectedIds, onToggleSelect, onToggleSelectAll, onEdit, onChanged }: LeadsTableProps) {
+export function LeadsTable({
+  leads,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+  onEdit,
+  onChanged,
+  onSendEmail,
+  onViewHistory,
+}: LeadsTableProps) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Lead | null>(null);
 
@@ -57,12 +83,14 @@ export function LeadsTable({ leads, selectedIds, onToggleSelect, onToggleSelectA
               />
             </TableHead>
             <TableHead>Business</TableHead>
+            <TableHead>Score</TableHead>
             <TableHead>Category</TableHead>
             <TableHead>Location</TableHead>
             <TableHead>Rating</TableHead>
             <TableHead>Website</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead>Email</TableHead>
+            <TableHead>Status</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -83,6 +111,11 @@ export function LeadsTable({ leads, selectedIds, onToggleSelect, onToggleSelectA
                     Unclaimed
                   </Badge>
                 )}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className={toneClass(scoreTone(lead.score))}>
+                  {lead.score}
+                </Badge>
               </TableCell>
               <TableCell>{lead.category ?? '—'}</TableCell>
               <TableCell>{lead.location}</TableCell>
@@ -125,7 +158,23 @@ export function LeadsTable({ leads, selectedIds, onToggleSelect, onToggleSelectA
                 )}
               </TableCell>
               <TableCell>
+                <Badge variant="outline" className={toneClass(STATUS_TONE[lead.status])}>
+                  {lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
+                </Badge>
+              </TableCell>
+              <TableCell>
                 <div className="flex items-center justify-end gap-1.5">
+                  {lead.maps_url && (
+                    <Button variant="ghost" size="icon-sm" render={<a href={lead.maps_url} target="_blank" rel="noreferrer" aria-label="View on Google Maps" />}>
+                      <MapPin className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon-sm" onClick={() => onSendEmail(lead)} aria-label="Send email">
+                    <Mail className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" onClick={() => onViewHistory(lead)} aria-label="View outreach history">
+                    <History className="h-3.5 w-3.5" />
+                  </Button>
                   <Button variant="ghost" size="icon-sm" onClick={() => onEdit(lead)} aria-label="Edit lead">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>

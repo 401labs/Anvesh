@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, Plus, Trash2, Mail, X } from 'lucide-react';
 import { usePolling } from '@/hooks/usePolling';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/shared/ErrorBanner';
@@ -9,6 +9,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadFormModal } from '@/components/leads/LeadFormModal';
 import { LeadsFilterBar } from '@/components/leads/LeadsFilterBar';
+import { SendEmailModal } from '@/components/outreach/SendEmailModal';
+import { OutreachHistoryDrawer } from '@/components/outreach/OutreachHistoryDrawer';
 import { postJson } from '@/lib/client';
 import { leadFiltersToQuery, EMPTY_LEAD_FILTERS } from '@/lib/leadQuery';
 import type { Lead, LeadFilters, LeadsPage } from '@/lib/types';
@@ -23,11 +25,20 @@ export default function LeadsPage() {
   const { data, message, loading, unreachable, refetch } = usePolling<LeadsPage>(
     `/api/leads?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}${filterQuery ? `&${filterQuery}` : ''}`
   );
+  // Unfiltered count, so the overall total stays visible even while filters narrow the list above.
+  const { data: overall, refetch: refetchOverall } = usePolling<LeadsPage>('/api/leads?limit=1');
+
+  function refetchAll() {
+    refetch();
+    refetchOverall();
+  }
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [emailLeadIds, setEmailLeadIds] = useState<number[] | null>(null);
+  const [historyLeadId, setHistoryLeadId] = useState<number | null>(null);
 
   // Selection is page-scoped — drop it when the page or underlying data changes.
   useEffect(() => {
@@ -66,18 +77,27 @@ export default function LeadsPage() {
     await postJson('/api/leads/bulk-delete', { ids: Array.from(selectedIds) });
     setBulkDeleting(false);
     setSelectedIds(new Set());
-    refetch();
+    refetchAll();
   }
 
   return (
-    <div className="w-full px-6 py-10 md:px-10">
-      <div className="mb-8 flex items-center justify-between">
+    <div className="w-full px-6 py-8 md:px-10">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Leads</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-white">Leads</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {data
-              ? `${data.total} lead${data.total === 1 ? '' : 's'}${filterQuery ? ' matching filters' : ' scraped so far'}.`
-              : 'Browse scraped leads.'}
+            {data && overall ? (
+              filterQuery ? (
+                <>
+                  {data.total} of <span className="text-slate-300">{overall.total}</span> lead
+                  {overall.total === 1 ? '' : 's'} match your filters.
+                </>
+              ) : (
+                `${overall.total} lead${overall.total === 1 ? '' : 's'} scraped so far.`
+              )
+            ) : (
+              'Browse scraped leads.'
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -107,6 +127,14 @@ export default function LeadsPage() {
               Clear
             </Button>
             <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setEmailLeadIds(Array.from(selectedIds))}
+            >
+              <Mail className="h-3.5 w-3.5" />
+              Send Email
+            </Button>
+            <Button
               variant="destructive"
               size="sm"
               disabled={bulkDeleting}
@@ -127,7 +155,9 @@ export default function LeadsPage() {
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
           onEdit={setEditingLead}
-          onChanged={refetch}
+          onChanged={refetchAll}
+          onSendEmail={(lead) => setEmailLeadIds([lead.id])}
+          onViewHistory={(lead) => setHistoryLeadId(lead.id)}
         />
       )}
 
@@ -157,8 +187,8 @@ export default function LeadsPage() {
         </div>
       )}
 
-      <LeadFormModal createOpen={createOpen} onClose={() => setCreateOpen(false)} onSaved={refetch} />
-      <LeadFormModal editingLead={editingLead} onClose={() => setEditingLead(null)} onSaved={refetch} />
+      <LeadFormModal createOpen={createOpen} onClose={() => setCreateOpen(false)} onSaved={refetchAll} />
+      <LeadFormModal editingLead={editingLead} onClose={() => setEditingLead(null)} onSaved={refetchAll} />
       <ConfirmDialog
         open={confirmBulkDelete}
         onOpenChange={setConfirmBulkDelete}
@@ -167,6 +197,15 @@ export default function LeadsPage() {
         confirmLabel="Delete"
         onConfirm={bulkDelete}
       />
+      <SendEmailModal
+        leadIds={emailLeadIds}
+        onClose={() => setEmailLeadIds(null)}
+        onSent={() => {
+          setEmailLeadIds(null);
+          refetchAll();
+        }}
+      />
+      <OutreachHistoryDrawer leadId={historyLeadId} onClose={() => setHistoryLeadId(null)} />
     </div>
   );
 }

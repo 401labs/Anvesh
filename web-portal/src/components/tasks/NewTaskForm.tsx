@@ -19,6 +19,7 @@ export function NewTaskForm({ onStarted }: NewTaskFormProps) {
   const [locations, setLocations] = useState<string[]>([]);
   const [unlimited, setUnlimited] = useState(true);
   const [limit, setLimit] = useState(50);
+  const [showBrowser, setShowBrowser] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +37,7 @@ export function NewTaskForm({ onStarted }: NewTaskFormProps) {
       industry: industry.trim(),
       locations,
       limit_per_location: unlimited ? -1 : limit,
+      headless: !showBrowser,
     };
     const envelope = await postJson('/api/tasks', body);
     setSubmitting(false);
@@ -83,6 +85,26 @@ export function NewTaskForm({ onStarted }: NewTaskFormProps) {
             onChange={(e) => setLimit(Number(e.target.value))}
             className="w-24 bg-white/[0.03]"
           />
+        )}
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-xs text-slate-400">
+          <Checkbox checked={showBrowser} onCheckedChange={(c) => setShowBrowser(c === true)} />
+          Show browser window (watch it live)
+        </label>
+        <p className="mt-1 text-[11px] text-slate-600">
+          Opens a real browser window if automation-server is running locally, or a live noVNC view if it&apos;s running in Docker.
+        </p>
+        {showBrowser && (
+          <a
+            href={process.env.NEXT_PUBLIC_VNC_URL ?? 'http://localhost:6080/vnc.html'}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-[11px] text-indigo-400 hover:text-indigo-300"
+          >
+            Open live view (noVNC) →
+          </a>
         )}
       </div>
 

@@ -16,6 +16,7 @@ export interface TaskConfig {
   industry: string;
   locations: string[];
   limit_per_location: number;
+  headless: boolean;
 }
 
 export interface Task {
@@ -49,6 +50,9 @@ export interface Lead {
   website_url: string | null;
   phone: string | null;
   email: string | null;
+  status: LeadStatus;
+  maps_url: string | null;
+  score: number;
   created_at: string;
 }
 
@@ -65,7 +69,7 @@ export interface LeadFilterOptions {
   categories: string[];
 }
 
-export type LeadSortBy = 'created_at' | 'rating' | 'review_count' | 'business_name';
+export type LeadSortBy = 'created_at' | 'rating' | 'review_count' | 'business_name' | 'score';
 export type SortDir = 'asc' | 'desc';
 
 export interface LeadFilters {
@@ -76,6 +80,8 @@ export interface LeadFilters {
   has_email?: boolean;
   is_claimed?: boolean;
   min_rating?: number;
+  min_score?: number;
+  status?: LeadStatus;
   search?: string;
   sort_by?: LeadSortBy;
   sort_dir?: SortDir;
@@ -94,6 +100,8 @@ export interface LeadCreate {
   website_url?: string;
   phone?: string;
   email?: string;
+  status?: LeadStatus;
+  maps_url?: string;
 }
 
 export type LeadUpdate = Partial<LeadCreate>;
@@ -153,4 +161,134 @@ export interface AutomationStats {
     locations: string[];
   };
   success_rate: string;
+}
+
+export type LeadStatus = 'new' | 'contacted' | 'replied' | 'interested' | 'won' | 'lost';
+
+export interface EmailTemplate {
+  id: number;
+  name: string;
+  subject: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailTemplateCreate {
+  name: string;
+  subject: string;
+  body: string;
+}
+
+export type EmailTemplateUpdate = Partial<EmailTemplateCreate>;
+
+export interface EmailTemplatesResponse {
+  templates: EmailTemplate[];
+}
+
+export type OutreachChannel = 'email';
+
+export interface OutreachLog {
+  id: number;
+  lead_id: number;
+  channel: OutreachChannel;
+  status: string;
+  subject: string | null;
+  body: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface OutreachLogsPage {
+  logs: OutreachLog[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SendEmailRequest {
+  lead_ids: number[];
+  template_id?: number;
+  subject?: string;
+  body?: string;
+}
+
+export interface SendEmailResult {
+  result?: { lead_id: number; sent: boolean; error: string | null };
+  queued?: number;
+  skipped_no_lead: number[];
+  skipped_no_email: number[];
+}
+
+export interface DashboardStats {
+  leads: {
+    total: number;
+    by_status: Record<LeadStatus, number>;
+    by_score_tier: { hot: number; warm: number; cool: number };
+    with_email: number;
+    with_website: number;
+    unclaimed: number;
+  };
+  leads_by_day: { date: string; count: number }[];
+  top_industries: { industry: string; count: number }[];
+  top_locations: { location: string; count: number }[];
+  outreach: {
+    total: number;
+    sent: number;
+    failed: number;
+  };
+  tasks: {
+    total: number;
+    running: number;
+    completed: number;
+    stopped: number;
+    error: number;
+  };
+}
+
+export interface Schedule {
+  id: number;
+  name: string;
+  industry: string;
+  locations: string[];
+  limit_per_location: number;
+  interval_hours: number;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  created_at: string;
+}
+
+export interface ScheduleCreate {
+  name: string;
+  industry: string;
+  locations: string[];
+  limit_per_location: number;
+  interval_hours: number;
+}
+
+export type ScheduleUpdate = Partial<ScheduleCreate> & { enabled?: boolean };
+
+export interface SchedulesResponse {
+  schedules: Schedule[];
+}
+
+export interface EmailConfig {
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_from_name: string;
+  imap_host: string;
+  imap_port: number;
+  smtp_app_password_set: boolean;
+}
+
+export interface EmailConfigUpdate {
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_user?: string;
+  smtp_app_password?: string;
+  smtp_from_name?: string;
+  imap_host?: string;
+  imap_port?: number;
 }

@@ -6,8 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { postJson, patchJson } from '@/lib/client';
-import type { Lead, LeadCreate } from '@/lib/types';
+import type { Lead, LeadCreate, LeadStatus } from '@/lib/types';
+
+const STATUS_OPTIONS: LeadStatus[] = ['new', 'contacted', 'replied', 'interested', 'won', 'lost'];
 
 const EMPTY: LeadCreate = {
   business_name: '',
@@ -21,6 +24,8 @@ const EMPTY: LeadCreate = {
   website_url: '',
   phone: '',
   email: '',
+  maps_url: '',
+  status: 'new',
 };
 
 interface LeadFormModalProps {
@@ -55,6 +60,8 @@ export function LeadFormModal({ editingLead, createOpen, onClose, onSaved }: Lea
         website_url: editingLead.website_url ?? '',
         phone: editingLead.phone ?? '',
         email: editingLead.email ?? '',
+        maps_url: editingLead.maps_url ?? '',
+        status: editingLead.status,
       });
     } else if (createOpen) {
       setValues(EMPTY);
@@ -111,6 +118,7 @@ export function LeadFormModal({ editingLead, createOpen, onClose, onSaved }: Lea
             <Field label="Email" type="email" value={values.email ?? ''} onChange={(v) => set('email', v)} />
           </div>
           <Field label="Website URL" value={values.website_url ?? ''} onChange={(v) => set('website_url', v)} />
+          <Field label="Maps URL" value={values.maps_url ?? ''} onChange={(v) => set('maps_url', v)} />
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="Rating"
@@ -132,6 +140,24 @@ export function LeadFormModal({ editingLead, createOpen, onClose, onSaved }: Lea
             />
             Has a website
           </label>
+
+          <div>
+            <Label className="mb-1.5 text-xs font-medium text-slate-400">Status</Label>
+            <Select value={values.status ?? 'new'} onValueChange={(v) => set('status', v as LeadStatus)}>
+              <SelectTrigger className="w-full bg-white/[0.03]">
+                <SelectValue>
+                  {(values.status ?? 'new').charAt(0).toUpperCase() + (values.status ?? 'new').slice(1)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {error && <p className="text-xs text-red-400">{error}</p>}
 
