@@ -19,6 +19,7 @@ services:
       - db
     ports:
       - "8000:8000"
+      - "6080:6080"
     volumes:
       - ./automation-server:/app
       - /app/.venv
@@ -31,6 +32,8 @@ services:
       - DB_NAME=lead_scraper
       # Must match web-portal's ADMIN_SECRET below — change both together.
       - ADMIN_SECRET=change-me-in-production
+      # VNC password for the noVNC live-view (port 6080). Change before exposing this beyond your own machine.
+      - VNC_PASSWORD=change-me-in-production
 
   web-portal:
     build:
@@ -48,6 +51,8 @@ services:
       - AUTOMATION_API_URL=http://automation-server:8000
       # Must match automation-server's ADMIN_SECRET above — change both together.
       - ADMIN_SECRET=change-me-in-production
+      # Browser-facing URL for the noVNC live-view page (port 6080 on automation-server, exposed to the host).
+      - NEXT_PUBLIC_VNC_URL=http://localhost:6080/vnc.html
 
 volumes:
   postgres_data:

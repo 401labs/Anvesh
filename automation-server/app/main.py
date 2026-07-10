@@ -1,13 +1,32 @@
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from app.routers import automation, keys, admin
+from app.routers import automation, keys, admin, outreach, stats, schedules, config
 from app.db import init_db
+from app.services.scheduler import scheduler_loop
+from app.services.replies import reply_checker_loop
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
 # API Base URL for OpenAPI docs
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Starts the two background polling loops for the app's lifetime:
+    recurring scrapes (app/services/scheduler.py) and outreach reply
+    detection (app/services/replies.py).
+    """
+    scheduler_task = asyncio.create_task(scheduler_loop())
+    replies_task = asyncio.create_task(reply_checker_loop())
+    yield
+    scheduler_task.cancel()
+    replies_task.cancel()
+
 
 app = FastAPI(
     title="Anvesh API",
@@ -15,7 +34,8 @@ app = FastAPI(
     version="1.0.0",
     servers=[
         {"url": API_BASE_URL, "description": "API Server"}
-    ]
+    ],
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -59,3 +79,7 @@ init_db()
 app.include_router(automation.router)
 app.include_router(keys.router)
 app.include_router(admin.router)
+app.include_router(outreach.router)
+app.include_router(stats.router)
+app.include_router(schedules.router)
+app.include_router(config.router)

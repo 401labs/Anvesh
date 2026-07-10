@@ -207,6 +207,72 @@ class TestLeadsFiltersSortAndExport:
         client.delete(f"/automation/leads/{low_id}", headers=user_headers)
         client.delete(f"/automation/leads/{high_id}", headers=user_headers)
 
+    def test_leads_include_score(self, client, user_headers):
+        """Every lead in the response should include a computed 0-100 score."""
+        create_response = self._create_lead(client, user_headers, business_name="Score Field Business", rating=5.0, review_count=500, has_website=False, is_claimed=False)
+        lead_id = create_response.json()["data"]["id"]
+
+        response = client.get("/automation/leads?industry=filter-test-industry&limit=200", headers=user_headers)
+
+        assert response.status_code == 200
+        leads = response.json()["data"]["leads"]
+        target = next(l for l in leads if l["id"] == lead_id)
+        assert target["score"] == 100
+
+        client.delete(f"/automation/leads/{lead_id}", headers=user_headers)
+
+    def test_sort_by_score(self, client, user_headers):
+        """sort_by=score&sort_dir=desc should rank a strong prospect above a weak one."""
+        weak = self._create_lead(
+            client, user_headers, business_name="Weak Prospect Business",
+            rating=2.0, review_count=1, has_website=True, is_claimed=True
+        )
+        strong = self._create_lead(
+            client, user_headers, business_name="Strong Prospect Business",
+            rating=5.0, review_count=500, has_website=False, is_claimed=False
+        )
+        weak_id = weak.json()["data"]["id"]
+        strong_id = strong.json()["data"]["id"]
+
+        response = client.get(
+            "/automation/leads?industry=filter-test-industry&sort_by=score&sort_dir=desc",
+            headers=user_headers
+        )
+
+        assert response.status_code == 200
+        leads = response.json()["data"]["leads"]
+        scored_ids = [l["id"] for l in leads if l["id"] in (weak_id, strong_id)]
+        assert scored_ids == [strong_id, weak_id]
+
+        client.delete(f"/automation/leads/{weak_id}", headers=user_headers)
+        client.delete(f"/automation/leads/{strong_id}", headers=user_headers)
+
+    def test_filter_by_min_score(self, client, user_headers):
+        """min_score should exclude leads scoring below the threshold."""
+        weak = self._create_lead(
+            client, user_headers, business_name="Below Threshold Business",
+            rating=1.0, review_count=0, has_website=True, is_claimed=True
+        )
+        strong = self._create_lead(
+            client, user_headers, business_name="Above Threshold Business",
+            rating=5.0, review_count=500, has_website=False, is_claimed=False
+        )
+        weak_id = weak.json()["data"]["id"]
+        strong_id = strong.json()["data"]["id"]
+
+        response = client.get(
+            "/automation/leads?industry=filter-test-industry&min_score=50&limit=200",
+            headers=user_headers
+        )
+
+        assert response.status_code == 200
+        ids = [l["id"] for l in response.json()["data"]["leads"]]
+        assert strong_id in ids
+        assert weak_id not in ids
+
+        client.delete(f"/automation/leads/{weak_id}", headers=user_headers)
+        client.delete(f"/automation/leads/{strong_id}", headers=user_headers)
+
     def test_export_respects_filters(self, client, user_headers):
         """CSV export should only include leads matching the given filters."""
         matching = self._create_lead(client, user_headers, business_name="Export Match Business")

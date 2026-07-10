@@ -28,9 +28,9 @@ export default function KeysPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
-    <div className="w-full px-6 py-10 md:px-10">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-white">API Keys</h1>
+    <div className="w-full px-6 py-8 md:px-10">
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold tracking-tight text-white">API Keys</h1>
         <p className="mt-1 text-sm text-slate-500">
           {data ? `${data.total} key${data.total === 1 ? '' : 's'}. ` : ''}Create, edit, revoke, and monitor usage.
         </p>

@@ -15,6 +15,16 @@ class TaskStatus(str, Enum):
     ERROR = "error"
 
 
+class LeadStatus(str, Enum):
+    """Pipeline stage for a lead's outreach status."""
+    NEW = "new"
+    CONTACTED = "contacted"
+    REPLIED = "replied"
+    INTERESTED = "interested"
+    WON = "won"
+    LOST = "lost"
+
+
 class ScrapeRequest(BaseModel):
     """Configuration for starting a lead scraping automation task."""
     
@@ -34,7 +44,11 @@ class ScrapeRequest(BaseModel):
         ge=-1,
         examples=[50, 100, -1]
     )
-    
+    headless: bool = Field(
+        default=True,
+        description="Run the browser headless. Set false to watch the scrape live in a visible browser window — only visible on the machine actually running automation-server (not in Docker).",
+    )
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -91,6 +105,8 @@ class LeadCreate(BaseModel):
     website_url: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = Field(default=None, examples=["hello@joescoffee.com"])
+    status: Optional[str] = Field(default="new", examples=["new", "contacted"])
+    maps_url: Optional[str] = Field(default=None, examples=["https://www.google.com/maps/place/..."])
 
 
 class LeadUpdate(BaseModel):
@@ -108,6 +124,8 @@ class LeadUpdate(BaseModel):
     website_url: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    status: Optional[str] = None
+    maps_url: Optional[str] = None
 
 
 class LeadBulkDeleteRequest(BaseModel):

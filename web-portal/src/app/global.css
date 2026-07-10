@@ -88,8 +88,8 @@ body::after {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
-  border-radius: 2rem;
+  padding: 1.25rem;
+  border-radius: 1.25rem;
   background: #131316;
   border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 20px rgba(0, 0, 0, 0.4);

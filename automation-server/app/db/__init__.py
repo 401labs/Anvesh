@@ -11,6 +11,12 @@ from app.db.database import (
     delete_lead,
     bulk_delete_leads,
     get_lead_filter_options,
+    get_lead_by_email,
+    get_lead_stats,
+    get_leads_by_day,
+    get_top_industries,
+    get_top_locations,
+    LeadInsertError,
 )
 from app.db.api_keys import (
     create_tables as create_api_key_tables,
@@ -25,4 +31,49 @@ from app.db.api_keys import (
     log_usage,
     get_usage_stats,
     check_quota
+)
+from app.db.tasks import (
+    create_tables as create_task_tables,
+    create_task,
+    get_task,
+    list_tasks,
+    count_tasks,
+    list_all_tasks,
+    list_running_tasks,
+    get_task_counts,
+    set_task_status,
+    set_task_running,
+    get_task_stop_flag,
+    request_stop,
+    request_stop_all,
+    delete_task,
+)
+from app.db.outreach import (
+    create_tables as create_outreach_tables,
+    create_template,
+    get_template,
+    list_templates,
+    update_template,
+    delete_template,
+    create_log,
+    list_logs,
+    count_logs,
+    get_outreach_stats,
+)
+from app.db.schedules import (
+    create_tables as create_schedule_tables,
+    create_schedule,
+    get_schedule,
+    list_schedules,
+    update_schedule,
+    delete_schedule,
+    get_due_schedules,
+    mark_schedule_ran,
+)
+from app.db.app_settings import (
+    create_tables as create_app_settings_tables,
+    get_setting,
+    get_settings,
+    set_setting,
+    get_effective_email_settings,
 )

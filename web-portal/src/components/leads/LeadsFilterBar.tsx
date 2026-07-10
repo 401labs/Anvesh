@@ -14,11 +14,15 @@ import {
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { usePolling } from '@/hooks/usePolling';
-import type { LeadFilterOptions, LeadFilters, LeadSortBy, SortDir } from '@/lib/types';
+import type { LeadFilterOptions, LeadFilters, LeadSortBy, LeadStatus, SortDir } from '@/lib/types';
 
 const ANY = '__any__';
 
+const STATUS_OPTIONS: LeadStatus[] = ['new', 'contacted', 'replied', 'interested', 'won', 'lost'];
+
 const SORT_OPTIONS: { value: string; label: string; sort_by: LeadSortBy; sort_dir: SortDir }[] = [
+  { value: 'score_desc', label: 'Best prospects first', sort_by: 'score', sort_dir: 'desc' },
+  { value: 'score_asc', label: 'Worst prospects first', sort_by: 'score', sort_dir: 'asc' },
   { value: 'newest', label: 'Newest first', sort_by: 'created_at', sort_dir: 'desc' },
   { value: 'oldest', label: 'Oldest first', sort_by: 'created_at', sort_dir: 'asc' },
   { value: 'rating_desc', label: 'Highest rated', sort_by: 'rating', sort_dir: 'desc' },
@@ -54,6 +58,8 @@ function buildActiveChips(filters: LeadFilters): Chip[] {
     chips.push({ key: 'is_claimed', label: filters.is_claimed ? 'Claimed' : 'Unclaimed' });
   }
   if (filters.min_rating !== undefined) chips.push({ key: 'min_rating', label: `${filters.min_rating}+ stars` });
+  if (filters.min_score !== undefined) chips.push({ key: 'min_score', label: `Score ${filters.min_score}+` });
+  if (filters.status) chips.push({ key: 'status', label: `Status: ${filters.status}` });
   return chips;
 }
 
@@ -147,6 +153,48 @@ export function LeadsFilterBar({ filters, onChange }: LeadsFilterBarProps) {
                         <SelectItem value="3">3+ stars</SelectItem>
                         <SelectItem value="4">4+ stars</SelectItem>
                         <SelectItem value="4.5">4.5+ stars</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">Status</label>
+                    <Select
+                      value={filters.status ?? ANY}
+                      onValueChange={(v) => set('status', !v || v === ANY ? undefined : (v as LeadStatus))}
+                    >
+                      <SelectTrigger className="w-full bg-white/[0.03]">
+                        <SelectValue>
+                          {filters.status
+                            ? filters.status.charAt(0).toUpperCase() + filters.status.slice(1)
+                            : 'Any status'}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ANY}>Any status</SelectItem>
+                        {STATUS_OPTIONS.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">Min score</label>
+                    <Select
+                      value={filters.min_score?.toString() ?? ANY}
+                      onValueChange={(v) => set('min_score', !v || v === ANY ? undefined : Number(v))}
+                    >
+                      <SelectTrigger className="w-full bg-white/[0.03]">
+                        <SelectValue>{filters.min_score != null ? `${filters.min_score}+` : 'Any'}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ANY}>Any score</SelectItem>
+                        <SelectItem value="30">30+</SelectItem>
+                        <SelectItem value="50">50+</SelectItem>
+                        <SelectItem value="70">70+</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

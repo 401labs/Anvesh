@@ -79,19 +79,20 @@ def extract_email_from_website(context, url: str, timeout_ms: int = 8000) -> Opt
     return None
 
 
-def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signal=None):
+def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signal=None, headless: bool = True):
     """
     Scrapes Google Maps for leads.
     :param total: Number of leads to scrape. -1 for unlimited.
     :param stop_signal: A callable that returns True if the scraper should stop.
+    :param headless: Run Chromium headless. Set False to watch the scrape live.
     """
     search_query = f"{industry} in {location}"
     print(f"🚀 [Sync] Searching: {search_query}...")
-    
+
     results = []
-    
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=headless)
         
         # 🟢 FIX 1: Set Timezone to reduce "Near Me" bias (using Toronto/NY as generic NA)
         context = browser.new_context(
@@ -150,24 +151,28 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                 if total != -1 and valid_leads_count >= total:
                     break
                 
-                # Check for "End of list" message (Class based)
-                if page.query_selector("div.HlvSq"):
-                    print("🏁 Reached end of the list (Marker Found).")
-                    break
-                
-                # Check for "End of list" message (Text based - More reliable)
-                try:
-                    # check if the element is visible without throwing error if not found immediately
-                    if page.get_by_text("You've reached the end of the list").is_visible():
-                        print("🏁 Reached end of the list (Text Detected).")
-                        break
-                except:
-                    pass
-
                 listings = page.query_selector_all('div[role="article"]')
-                
+
                 # Check if we have processed everything visible
                 if len(listings) == len(processed_indices):
+                    # Nothing new loaded yet — only NOW check whether Google says
+                    # we've reached the end of the results. This has to come after
+                    # exhausting what's currently loaded, not at the top of the loop:
+                    # a search with just 1-2 results shows "end of the list"
+                    # immediately, and checking it first would exit before a single
+                    # card had ever been scraped.
+                    if page.query_selector("div.HlvSq"):
+                        print("🏁 Reached end of the list (Marker Found).")
+                        break
+
+                    try:
+                        # check if the element is visible without throwing error if not found immediately
+                        if page.get_by_text("You've reached the end of the list").is_visible():
+                            print("🏁 Reached end of the list (Text Detected).")
+                            break
+                    except:
+                        pass
+
                     # No new items loaded yet, scroll more
                     print("📜 Scrolling for more...")
                     page.hover('div[role="feed"]')
@@ -207,10 +212,18 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                         # 1. Get the expected name from the card itself before clicking
                         expected_name_el = card.query_selector('div.qBF1Pd')
                         expected_name = expected_name_el.inner_text().strip() if expected_name_el else None
-                        
+
                         if not expected_name:
                             print("      ⚠️ Could not find name on card. Skipping.")
                             continue
+
+                        # The card's own link already points straight at this business's
+                        # Google Maps place page. Grab it here rather than relying on
+                        # page.url after the click below — for the first (often
+                        # auto-selected) result Google frequently leaves the address bar
+                        # on the plain search URL instead of navigating to the place URL.
+                        maps_link_el = card.query_selector('a')
+                        maps_url = maps_link_el.get_attribute('href') if maps_link_el else None
 
                         # 2. Smart Click & Verify
                         # Sometimes a click doesn't "take" (missed click, UI shift). 
@@ -318,7 +331,8 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                                 if close_btn: close_btn.click()
                             except: pass
                             continue # SKIP THIS ITEM to avoid saving false data
-                            
+
+
                         # 3. After waiting for NAME, ensure other DETAILS are loaded (Address/Rating)
                         # This fixes the "First Item Empty" issue where name loads but details lag behind.
                         try:
@@ -468,7 +482,8 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                             "has_website": has_website,
                             "website_url": website_url,
                             "phone": phone,
-                            "email": email              # NEW
+                            "email": email,             # NEW
+                            "maps_url": maps_url
                         })
 
                         lead_data = {
@@ -483,7 +498,8 @@ def scrape_google_maps(industry: str, location: str, total: int = -1, stop_signa
                             "rating": rating,          # NEW
                             "review_count": reviews,   # NEW
                             "is_claimed": is_claimed,  # NEW
-                            "category": category       # NEW
+                            "category": category,      # NEW
+                            "maps_url": maps_url
                         }
                         
                         # --- INSERT TO DB ---
