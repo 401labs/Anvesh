@@ -10,8 +10,17 @@
 **Anvesh** is a monorepo containing:
 
 *   **[Automation Server](./automation-server)**: The core Python/FastAPI backend and scraping engine.
-*   **[Web Portal](./web-portal)**: A dashboard for operating the automation server — tasks, leads, and API keys.
+*   **[Web Portal](./web-portal)**: A dashboard for operating the automation server — tasks (with an optional live view), leads, email outreach, and API keys.
 *   **[Docs Site](./docs-site)**: Public documentation and landing page.
+
+## ✨ What it does
+
+*   **Scrapes Google Maps** for businesses matching an industry + location, watchable live (headed browser locally, or a noVNC link when running in Docker) — one-off or on a **recurring schedule** (daily/weekly/etc., no manual restart needed).
+*   **Scores every lead** 0-100 — high rating, many reviews, no website, unclaimed listing all push a lead up, so you know who to pitch first without eyeballing a spreadsheet.
+*   **Stores and organizes leads** — filter by website/email presence, claim status, rating, score, or outreach stage; each lead keeps a direct link back to its Google Maps listing.
+*   **Sends outreach email** — reusable templates with per-lead placeholders, single or bulk sends via your own SMTP (e.g. Gmail + an app password), with every attempt logged, replies auto-detected over IMAP, and a lead's status advancing through the pipeline automatically.
+*   **Dashboards the whole funnel** — one view of lead status breakdown, hot/warm/cool prospects, send/reply stats, and top industries/locations.
+*   **Gates access with API keys** — tiered quotas (free/pro/enterprise), usage tracking, admin controls.
 
 ## 🚀 Quick Start
 
@@ -21,11 +30,12 @@ There are two ways to run Anvesh — pick one. Both are verified working.
 
 One command brings up everything — database, API, and the dashboard — with a shared default admin secret already wired in, no manual config needed:
 ```bash
-docker compose up --build
+./start.sh
 ```
-API at [http://localhost:8000](http://localhost:8000), Web Portal at [http://localhost:3000](http://localhost:3000).
+(or run `docker compose up --build` directly — `start.sh` just wraps it and waits until the API and dashboard are actually responding before printing the URLs.)
+API at [http://localhost:8000](http://localhost:8000), Web Portal at [http://localhost:3000](http://localhost:3000), live scrape view (noVNC) at [http://localhost:6080/vnc.html](http://localhost:6080/vnc.html) once a headed task is running.
 
-The default `ADMIN_SECRET` (`change-me-in-production`, set in `docker-compose.yml`) is fine for local use — change it in both the `automation-server` and `web-portal` service blocks together before exposing this anywhere beyond your own machine.
+The default `ADMIN_SECRET` and `VNC_PASSWORD` (`change-me-in-production`, set in `docker-compose.yml`) are fine for local use — change them before exposing this anywhere beyond your own machine. Outreach email is opt-in: set `SMTP_USER`/`SMTP_APP_PASSWORD` (see [automation-server/README.md](./automation-server/README.md#-outreach)) if you want to actually send; without them, sending just fails cleanly.
 
 ### Option B: Manual (no Docker for the apps)
 
